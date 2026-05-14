@@ -1,15 +1,36 @@
 {
   "name": "mcp-router",
   "version": "1.0.0",
-  "description": "Unified MCP router — proxies all downstream MCP servers behind a single 'ask' tool",
+  "description": "Smart MCP router — exposes a single 'route' tool that uses Claude to pick and call the right downstream MCP tool automatically",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "mcp-router": "dist/index.js"
+  },
+  "files": [
+    "dist/**/*",
+    "mcp-router.config.json"
+  ],
   "scripts": {
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run build"
   },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "anthropic",
+    "ai",
+    "llm",
+    "router",
+    "windsurf",
+    "cursor"
+  ],
+  "author": "Vijaynw <vijaywaghmare713@gmail.com>",
+  "license": "MIT",
   "engines": {
     "node": ">=18"
   },
