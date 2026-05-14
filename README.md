@@ -2,6 +2,8 @@
 
 > One tool to rule them all — a smart MCP router that uses Claude to automatically pick and call the right downstream MCP tool from your natural language task.
 
+👉 [View the marketing page](marketing/index.html)
+
 Instead of exposing 50+ tools to your AI editor (Windsurf, Cursor, etc.) and hoping it picks the right one, `mcp-router` proxies all your MCP servers behind a **single `route` tool**. You describe what you want in plain English — the router figures out which tool to call.
 
 ```
