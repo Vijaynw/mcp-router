@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>mcp-router — One tool to rule them all</title>
+  <meta name="description" content="Smart MCP router that uses Claude to automatically pick and call the right downstream MCP tool from your natural language task.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', sans-serif; }
+    .gradient-text {
+      background: linear-gradient(135deg, #000000 0%, #333333 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .gradient-bg {
+      background: linear-gradient(135deg, #000000 0%, #333333 100%);
+    }
+    .card-hover {
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .card-hover:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    }
+    .code-block {
+      background: #1e1e1e;
+      border-radius: 8px;
+    }
+    .flow-arrow {
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <!-- Navigation -->
+  <nav class="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md border-b border-gray-200 z-50">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 gradient-bg rounded-lg flex items-center justify-center">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+          </svg>
+        </div>
+        <span class="font-bold text-xl">mcp-router</span>
+      </div>
+      <div class="hidden md:flex items-center gap-8">
+        <a href="#features" class="text-gray-600 hover:text-gray-900 transition">Features</a>
+        <a href="#how-it-works" class="text-gray-600 hover:text-gray-900 transition">How it works</a>
+        <a href="#install" class="text-gray-600 hover:text-gray-900 transition">Install</a>
+        <a href="https://github.com/vijaynw/mcp-router" target="_blank" class="gradient-bg text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="pt-32 pb-20 px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <div class="inline-block px-4 py-2 bg-gray-100 text-gray-900 rounded-full text-sm font-medium mb-6">
+        v1.0.0 — Now Available
+      </div>
+      <h1 class="text-5xl md:text-6xl font-extrabold mb-6 leading-tight">
+        One tool to <span class="gradient-text">rule them all</span>
+      </h1>
+      <p class="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
+        A smart MCP router that uses Claude to automatically pick and call the right downstream MCP tool from your natural language task.
+      </p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="#install" class="gradient-bg text-white px-8 py-4 rounded-xl font-semibold text-lg hover:opacity-90 transition shadow-lg">
+          Get Started
+        </a>
+        <a href="https://github.com/vijaynw/mcp-router" target="_blank" class="bg-white text-gray-900 px-8 py-4 rounded-xl font-semibold text-lg border border-gray-200 hover:border-gray-300 transition">
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problem/Solution -->
+  <section class="py-20 px-6 bg-white">
+    <div class="max-w-6xl mx-auto">
+      <div class="grid md:grid-cols-2 gap-12 items-center">
+        <div>
+          <h2 class="text-3xl font-bold mb-6">The Problem</h2>
+          <p class="text-lg text-gray-600 mb-4">
+            AI editors connect to MCP servers to give agents superpowers — file access, GitHub, databases, Slack, etc.
+          </p>
+          <p class="text-lg text-gray-600">
+            The more MCP servers you add, the more tools the agent sees. With 5 servers × 10 tools each = <span class="font-semibold text-gray-900">50 tools cluttering every prompt</span>. The agent slows down, picks the wrong tool, or gets confused.
+          </p>
+        </div>
+        <div class="code-block p-6 text-sm">
+          <div class="text-gray-400 mb-2">// Before: 50+ tools exposed</div>
+          <div class="text-green-400">filesystem__list_directory</div>
+          <div class="text-green-400">filesystem__read_file</div>
+          <div class="text-green-400">filesystem__write_file</div>
+          <div class="text-green-400">github__create_issue</div>
+          <div class="text-green-400">github__list_issues</div>
+          <div class="text-green-400">github__add_comment</div>
+          <div class="text-green-400">slack__send_message</div>
+          <div class="text-green-400">slack__list_channels</div>
+          <div class="text-gray-500 mt-2">... and 40+ more tools</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Solution -->
+  <section class="py-20 px-6 bg-gray-50">
+    <div class="max-w-6xl mx-auto">
+      <div class="grid md:grid-cols-2 gap-12 items-center">
+        <div class="order-2 md:order-1 code-block p-6 text-sm">
+          <div class="text-gray-400 mb-2">// After: Just ONE tool</div>
+          <div class="text-yellow-400 font-semibold">route(task)</div>
+          <div class="text-gray-500 mt-4">// Claude automatically picks the right tool</div>
+          <div class="text-gray-500">// chains multiple calls if needed</div>
+        </div>
+        <div class="order-1 md:order-2">
+          <h2 class="text-3xl font-bold mb-6">The Solution</h2>
+          <p class="text-lg text-gray-600 mb-6">
+            <code class="bg-gray-100 px-2 py-1 rounded text-gray-900 font-mono">mcp-router</code> proxies all your MCP servers behind a <span class="font-semibold">single <code class="bg-gray-100 px-2 py-1 rounded text-gray-900 font-mono">route</code> tool</span>. You describe what you want in plain English — the router figures out which tool to call.
+          </p>
+          <div class="space-y-3">
+            <div class="flex items-start gap-3">
+              <div class="w-6 h-6 gradient-bg rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+              </div>
+              <div>
+                <strong class="text-gray-900">Hides complexity</strong>
+                <p class="text-gray-600">Your editor sees exactly 1 tool regardless of how many MCPs you connect</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <div class="w-6 h-6 gradient-bg rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+              </div>
+              <div>
+                <strong class="text-gray-900">Intelligent routing</strong>
+                <p class="text-gray-600">Claude reads your request and picks the best downstream tool automatically</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3">
+              <div class="w-6 h-6 gradient-bg rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+              </div>
+              <div>
+                <strong class="text-gray-900">Multi-step tasks</strong>
+                <p class="text-gray-600">For complex requests, Claude chains multiple tool calls in sequence</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Flow Diagram -->
+  <section id="how-it-works" class="py-20 px-6 bg-white">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold mb-4">How it works</h2>
+        <p class="text-lg text-gray-600">Simple flow, powerful results</p>
+      </div>
+      <div class="code-block p-8 text-center">
+        <div class="flex flex-col md:flex-row items-center justify-center gap-4 text-sm">
+          <div class="bg-gray-800 px-6 py-3 rounded-lg">
+            <div class="text-gray-400 mb-1">Your prompt</div>
+            <div class="text-white font-mono">route("create GitHub issue")</div>
+          </div>
+          <div class="flow-arrow text-2xl text-gray-500">↓</div>
+          <div class="bg-gray-900 px-6 py-3 rounded-lg">
+            <div class="text-gray-400 mb-1">Claude picks tool</div>
+            <div class="text-white font-mono">analyzes request</div>
+          </div>
+          <div class="flow-arrow text-2xl text-gray-500">↓</div>
+          <div class="bg-gray-800 px-6 py-3 rounded-lg">
+            <div class="text-gray-400 mb-1">Router calls</div>
+            <div class="text-green-400 font-mono">github__create_issue(...)</div>
+          </div>
+          <div class="flow-arrow text-2xl text-gray-500">↓</div>
+          <div class="bg-gray-800 px-6 py-3 rounded-lg">
+            <div class="text-gray-400 mb-1">Result</div>
+            <div class="text-white font-mono">back to you ✓</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="py-20 px-6 bg-gray-50">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold mb-4">Features</h2>
+        <p class="text-lg text-gray-600">Everything you need to streamline your MCP workflow</p>
+      </div>
+      <div class="grid md:grid-cols-3 gap-6">
+        <div class="bg-white p-6 rounded-xl card-hover">
+          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Natural Language</h3>
+          <p class="text-gray-600">Describe tasks in plain English. No need to remember specific tool names or parameters.</p>
+        </div>
+        <div class="bg-white p-6 rounded-xl card-hover">
+          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Smart Routing</h3>
+          <p class="text-gray-600">Claude intelligently selects the right tool from dozens of available options.</p>
+        </div>
+        <div class="bg-white p-6 rounded-xl card-hover">
+          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Multi-step Chaining</h3>
+          <p class="text-gray-600">Complex tasks? Claude chains multiple tool calls automatically and returns a single result.</p>
+        </div>
+        <div class="bg-white p-6 rounded-xl card-hover">
+          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">HTTP & stdio</h3>
+          <p class="text-gray-600">Run as stdio for editors or HTTP server for remote/multi-client setups.</p>
+        </div>
+        <div class="bg-white p-6 rounded-xl card-hover">
+          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Configurable</h3>
+          <p class="text-gray-600">Customize Claude model, token limits, and max iterations per task.</p>
+        </div>
+        <div class="bg-white p-6 rounded-xl card-hover">
+          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold mb-2">Cost Effective</h3>
+          <p class="text-gray-600">~$0.001–0.003 per simple task. Negligible for occasional editor use.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Usage Examples -->
+  <section class="py-20 px-6 bg-white">
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold mb-4">Usage Examples</h2>
+        <p class="text-lg text-gray-600">Just describe what you want — mcp-router handles the rest</p>
+      </div>
+      <div class="code-block p-6">
+        <table class="w-full text-left text-sm">
+          <thead>
+            <tr class="border-b border-gray-700">
+              <th class="pb-3 text-gray-400 font-medium">You say</th>
+              <th class="pb-3 text-gray-400 font-medium">Router calls</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-300">
+            <tr class="border-b border-gray-800">
+              <td class="py-3 font-mono text-white">"list files in /tmp"</td>
+              <td class="py-3 font-mono text-green-400">filesystem__list_directory</td>
+            </tr>
+            <tr class="border-b border-gray-800">
+              <td class="py-3 font-mono text-white">"create a GitHub issue titled 'Bug: login fails'"</td>
+              <td class="py-3 font-mono text-green-400">github__create_issue</td>
+            </tr>
+            <tr class="border-b border-gray-800">
+              <td class="py-3 font-mono text-white">"search for TODO in all JS files under src/"</td>
+              <td class="py-3 font-mono text-green-400">filesystem__search_files</td>
+            </tr>
+            <tr>
+              <td class="py-3 font-mono text-white">"what's in the README?"</td>
+              <td class="py-3 font-mono text-green-400">filesystem__read_file</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-6 p-4 bg-gray-100 border border-gray-200 rounded-lg">
+        <p class="text-gray-800 text-sm">
+          <strong>Multi-step example:</strong> "Read the package.json, then create a GitHub issue summarising the dependencies" 
+          → reads file → creates issue → returns result
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Installation -->
+  <section id="install" class="py-20 px-6 bg-gray-50">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center mb-12">
+        <h2 class="text-3xl font-bold mb-4">Installation</h2>
+        <p class="text-lg text-gray-600">Get started in 3 simple steps</p>
+      </div>
+      <div class="space-y-6">
+        <div class="bg-white p-6 rounded-xl">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-8 h-8 gradient-bg rounded-full flex items-center justify-center text-white font-bold">1</div>
+            <h3 class="text-xl font-semibold">Install globally</h3>
+          </div>
+          <div class="code-block p-4 text-sm">
+            <code class="text-green-400">npm install -g mcp-router</code>
+          </div>
+          <p class="text-gray-600 mt-3 text-sm">Or run without installing: <code class="bg-gray-100 px-2 py-1 rounded">npx mcp-router</code></p>
+        </div>
+        <div class="bg-white p-6 rounded-xl">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-8 h-8 gradient-bg rounded-full flex items-center justify-center text-white font-bold">2</div>
+            <h3 class="text-xl font-semibold">Create config file</h3>
+          </div>
+          <p class="text-gray-600 mb-3 text-sm">Create <code class="bg-gray-100 px-2 py-1 rounded">mcp-router.config.json</code> in your project or home directory:</p>
+          <div class="code-block p-4 text-sm overflow-x-auto">
+            <pre class="text-gray-300">{
+  "mcpServers": {
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/your/path"]
+    },
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here"
+      }
+    }
+  }
+}</pre>
+          </div>
+        </div>
+        <div class="bg-white p-6 rounded-xl">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-8 h-8 gradient-bg rounded-full flex items-center justify-center text-white font-bold">3</div>
+            <h3 class="text-xl font-semibold">Set API key & add to editor</h3>
+          </div>
+          <p class="text-gray-600 mb-3 text-sm">Set your Anthropic API key:</p>
+          <div class="code-block p-4 text-sm mb-4">
+            <code class="text-green-400">export ANTHROPIC_API_KEY=sk-ant-...</code>
+          </div>
+          <p class="text-gray-600 mb-3 text-sm">Add to your editor config (Windsurf/Cursor/Claude Desktop):</p>
+          <div class="code-block p-4 text-sm overflow-x-auto">
+            <pre class="text-gray-300">{
+  "mcpServers": {
+    "router": {
+      "command": "npx",
+      "args": ["mcp-router"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-...",
+        "MCP_ROUTER_CONFIG": "/absolute/path/to/mcp-router.config.json"
+      }
+    }
+  }
+}</pre>
+          </div>
+          <p class="text-gray-600 text-sm">Restart your editor — you'll see a single <code class="bg-gray-100 px-2 py-1 rounded text-gray-900">route</code> tool instead of all individual tools.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 px-6 bg-gray-900">
+    <div class="max-w-4xl mx-auto text-center">
+      <h2 class="text-3xl md:text-4xl font-bold text-white mb-6">Ready to simplify your MCP workflow?</h2>
+      <p class="text-xl text-gray-300 mb-8">Get started with mcp-router today and let Claude handle the tool selection for you.</p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <a href="#install" class="bg-white text-gray-900 px-8 py-4 rounded-xl font-semibold text-lg hover:bg-gray-100 transition shadow-lg">
+          Get Started
+        </a>
+        <a href="https://github.com/vijaynw/mcp-router" target="_blank" class="bg-transparent text-white px-8 py-4 rounded-xl font-semibold text-lg border-2 border-white hover:bg-white/10 transition">
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-gray-900 text-gray-400 py-12 px-6">
+    <div class="max-w-6xl mx-auto">
+      <div class="flex flex-col md:flex-row justify-between items-center gap-6">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 gradient-bg rounded-lg flex items-center justify-center">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+            </svg>
+          </div>
+          <span class="font-bold text-white">mcp-router</span>
+        </div>
+        <div class="flex items-center gap-6">
+          <a href="https://github.com/vijaynw/mcp-router" target="_blank" class="hover:text-white transition">GitHub</a>
+          <a href="https://www.npmjs.com/package/mcp-router" target="_blank" class="hover:text-white transition">npm</a>
+        </div>
+        <div class="text-sm">
+          MIT © <a href="https://github.com/vijaynw" target="_blank" class="hover:text-white transition">Vijaynw</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Smooth scroll for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+  </script>
+</body>
+</html>
