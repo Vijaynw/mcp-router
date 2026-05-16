@@ -1,9 +1,40 @@
 {
+  "_comment_providers": "Choose ONE provider block below. Remove the others.",
+
+  "_comment_anthropic": "--- OPTION 1: Anthropic Claude (paid, set ANTHROPIC_API_KEY env var) ---",
+  "claude": {
+    "model": "claude-sonnet-4-6",
+    "maxTokens": 8192,
+    "maxIterations": 5
+  },
+
+  "_comment_ollama": "--- OPTION 2: Ollama (free, local — run: ollama serve && ollama pull llama3.1:8b) ---",
+  "_ollama_provider": {
+    "type": "openai-compatible",
+    "baseUrl": "http://localhost:11434/v1",
+    "model": "llama3.1:8b",
+    "apiKey": "ollama",
+    "maxTokens": 4096,
+    "maxIterations": 5
+  },
+
+  "_comment_groq": "--- OPTION 3: Groq (free tier — get key at console.groq.com) ---",
+  "_groq_provider": {
+    "type": "openai-compatible",
+    "baseUrl": "https://api.groq.com/openai/v1",
+    "model": "llama-3.1-8b-instant",
+    "apiKey": "gsk_your_key_here",
+    "maxTokens": 4096,
+    "maxIterations": 5
+  },
+
+  "mode": "router",
+
   "mcpServers": {
     "filesystem": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:/Users/Vijay/Desktop"]
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/your/directory"]
     },
     "github": {
       "type": "stdio",
@@ -13,10 +44,5 @@
         "GITHUB_TOKEN": "your-github-token-here"
       }
     }
-  },
-  "claude": {
-    "model": "claude-sonnet-4-6",
-    "maxTokens": 8192,
-    "maxIterations": 5
   }
 }

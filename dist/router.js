@@ -1,17 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-// Lazy-initialize the Anthropic client so the module can be imported safely
-// when no API key is present (e.g. in tests or passthrough mode).
-let _anthropic = null;
-function getAnthropicClient() {
-    if (!_anthropic) {
-        _anthropic = new Anthropic({ timeout: 120_000 }); // 2-minute timeout per call
-    }
-    return _anthropic;
-}
 // ---------------------------------------------------------------------------
 // Tool-name encoding
 // Anthropic tool names must match ^[a-zA-Z0-9_-]{1,64}$
@@ -32,11 +22,11 @@ function buildToolIdMap(tools) {
     }
     return map;
 }
-function toAnthropicTools(toolIdMap) {
+function toLLMTools(toolIdMap) {
     return Array.from(toolIdMap.entries()).map(([id, tool]) => ({
         name: id,
         description: `[server: ${tool.mcpName}] ${tool.description}`,
-        input_schema: tool.inputSchema,
+        inputSchema: tool.inputSchema,
     }));
 }
 // ---------------------------------------------------------------------------
@@ -118,67 +108,51 @@ const SYSTEM_PROMPT = `You are a tool dispatcher. The user will describe a task.
 Use the available tools to complete it. Call tools as needed — you may call
 multiple tools in sequence if the task requires it. When the task is done,
 reply with a concise summary of what you did and the result.`;
-// Known Claude models — warn on unrecognised values to catch config typos early.
-const KNOWN_MODELS = new Set([
+// Known Anthropic models — warn on unrecognised values when using Anthropic provider.
+const KNOWN_ANTHROPIC_MODELS = new Set([
     "claude-opus-4-7",
     "claude-sonnet-4-6",
     "claude-haiku-4-5-20251001",
 ]);
-async function runRoutingLoop(task, connector, claudeConfig) {
-    const model = claudeConfig?.model ?? "claude-sonnet-4-6";
-    const maxTokens = claudeConfig?.maxTokens ?? 8192;
-    const maxIterations = claudeConfig?.maxIterations ?? 5;
-    if (!KNOWN_MODELS.has(model)) {
-        console.error(`[mcp-router] WARNING: Unrecognised model "${model}". Known models: ${[...KNOWN_MODELS].join(", ")}`);
+async function runRoutingLoop(task, connector, config, client) {
+    const model = config.provider?.model ?? config.claude?.model ?? "claude-sonnet-4-6";
+    const maxTokens = config.provider?.maxTokens ?? config.claude?.maxTokens ?? 8192;
+    const maxIterations = config.provider?.maxIterations ?? config.claude?.maxIterations ?? 5;
+    const isAnthropic = !config.provider || config.provider.type === "anthropic";
+    if (isAnthropic && !KNOWN_ANTHROPIC_MODELS.has(model)) {
+        console.error(`[mcp-router] WARNING: Unrecognised model "${model}". Known models: ${[...KNOWN_ANTHROPIC_MODELS].join(", ")}`);
     }
     const relevantTools = filterToolsForTask(task, connector.tools);
     const toolIdMap = buildToolIdMap(relevantTools);
     if (toolIdMap.size === 0) {
         return "Error: No downstream tools available. Check your mcp-router.config.json.";
     }
-    const anthropicTools = toAnthropicTools(toolIdMap);
-    const messages = [
-        { role: "user", content: task },
-    ];
+    const llmTools = toLLMTools(toolIdMap);
+    const messages = [{ role: "user", text: task }];
     for (let i = 0; i < maxIterations; i++) {
-        const response = await getAnthropicClient().messages.create({
-            model,
-            max_tokens: maxTokens,
+        const response = await client.chatWithTools({
             system: SYSTEM_PROMPT,
-            tools: anthropicTools,
-            // Force a tool call on the first turn; auto on subsequent turns so
-            // Claude can decide when it's done.
-            tool_choice: i === 0 ? { type: "any" } : { type: "auto" },
             messages,
+            tools: llmTools,
+            forceToolCall: i === 0,
+            model,
+            maxTokens,
         });
-        const toolUseBlocks = response.content.filter((b) => b.type === "tool_use");
-        const textBlocks = response.content.filter((b) => b.type === "text");
-        // Claude finished — return its text answer
-        if (response.stop_reason === "end_turn" || toolUseBlocks.length === 0) {
-            return textBlocks.map((b) => b.text).join("\n") || "Task completed.";
+        if (response.isEndTurn || !response.toolCalls) {
+            return response.text || "Task completed.";
         }
-        // Execute every tool Claude requested (may be parallel)
-        messages.push({ role: "assistant", content: response.content });
-        const toolResults = await Promise.all(toolUseBlocks.map(async (block) => {
-            console.error(`[mcp-router] → ${block.name}(${JSON.stringify(block.input)})`);
-            const tool = toolIdMap.get(block.name);
+        messages.push({ role: "assistant", text: response.text, toolCalls: response.toolCalls });
+        const toolResults = await Promise.all(response.toolCalls.map(async (tc) => {
+            console.error(`[mcp-router] → ${tc.name}(${JSON.stringify(tc.input)})`);
+            const tool = toolIdMap.get(tc.name);
             if (!tool) {
-                return {
-                    type: "tool_result",
-                    tool_use_id: block.id,
-                    content: `Error: Tool "${block.name}" not found.`,
-                    is_error: true,
-                };
+                return { id: tc.id, content: `Error: Tool "${tc.name}" not found.` };
             }
-            const result = await connector.callToolEntry(tool, block.input);
-            console.error(`[mcp-router] ← ${block.name}: ${result.slice(0, 120)}…`);
-            return {
-                type: "tool_result",
-                tool_use_id: block.id,
-                content: result,
-            };
+            const result = await connector.callToolEntry(tool, tc.input);
+            console.error(`[mcp-router] ← ${tc.name}: ${result.slice(0, 120)}…`);
+            return { id: tc.id, content: result };
         }));
-        messages.push({ role: "user", content: toolResults });
+        messages.push({ role: "user", toolResults });
     }
     return "Error: Reached the maximum number of routing iterations without completing the task. Try a more specific request.";
 }
@@ -198,29 +172,18 @@ const RECOMMEND_SYSTEM_PROMPT = `You are a tool selector. Given a task and a lis
 return ONLY a JSON object (no markdown, no explanation) with this exact shape:
 { "tool": "<exact tool name>", "args": { <key-value pairs matching the tool's expected arguments> }, "reason": "<one sentence>" }
 Pick the single best tool. If the task needs multiple tools, pick the first one to call.`;
-async function recommendTool(task, tools, claudeConfig) {
-    const model = claudeConfig?.model ?? "claude-haiku-4-5-20251001";
-    const maxTokens = claudeConfig?.maxTokens ?? 1024;
-    // Send only names + descriptions — no schemas. Keeps the payload tiny.
+async function recommendTool(task, tools, config, client) {
+    const model = config.provider?.model ?? config.claude?.model ?? "claude-haiku-4-5-20251001";
+    const maxTokens = config.provider?.maxTokens ?? config.claude?.maxTokens ?? 1024;
     const toolList = tools
         .map((t) => `- ${sanitize(t.mcpName)}__${sanitize(t.name)}: ${t.description}`)
         .join("\n");
-    const response = await getAnthropicClient().messages.create({
-        model,
-        max_tokens: maxTokens,
+    return client.chat({
         system: RECOMMEND_SYSTEM_PROMPT,
-        messages: [
-            {
-                role: "user",
-                content: `Task: ${task}\n\nAvailable tools:\n${toolList}`,
-            },
-        ],
+        userMessage: `Task: ${task}\n\nAvailable tools:\n${toolList}`,
+        model,
+        maxTokens,
     });
-    const text = response.content
-        .filter((b) => b.type === "text")
-        .map((b) => b.text)
-        .join("");
-    return text;
 }
 // ---------------------------------------------------------------------------
 // Delegated mode helpers
@@ -229,22 +192,18 @@ const SELECT_SYSTEM_PROMPT = `You are a tool selector. Given a task and a list o
 return ONLY a JSON object with this exact shape — no markdown, no explanation:
 { "tool": "<exact tool id>", "suggestedArgs": { <key-value pairs> }, "reason": "<one sentence>" }
 Pick the single best tool. If multiple tools are needed, pick the first one.`;
-async function selectTool(task, toolIdMap, claudeConfig) {
-    const model = claudeConfig?.model ?? "claude-haiku-4-5-20251001";
-    const maxTokens = claudeConfig?.maxTokens ?? 1024;
+async function selectTool(task, toolIdMap, config, client) {
+    const model = config.provider?.model ?? config.claude?.model ?? "claude-haiku-4-5-20251001";
+    const maxTokens = config.provider?.maxTokens ?? config.claude?.maxTokens ?? 1024;
     const toolList = Array.from(toolIdMap.entries())
         .map(([id, t]) => `- ${id}: ${t.description}`)
         .join("\n");
-    const response = await getAnthropicClient().messages.create({
-        model,
-        max_tokens: maxTokens,
+    const text = await client.chat({
         system: SELECT_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: `Task: ${task}\n\nAvailable tools:\n${toolList}` }],
+        userMessage: `Task: ${task}\n\nAvailable tools:\n${toolList}`,
+        model,
+        maxTokens,
     });
-    const text = response.content
-        .filter((b) => b.type === "text")
-        .map((b) => b.text)
-        .join("");
     let parsed;
     try {
         parsed = JSON.parse(text);
@@ -263,7 +222,7 @@ async function selectTool(task, toolIdMap, claudeConfig) {
         reason: parsed.reason ?? "",
     };
 }
-export function createDelegatedServer(connector, config) {
+export function createDelegatedServer(connector, config, client) {
     const server = new Server({ name: "mcp-router", version: "1.0.0" }, { capabilities: { tools: {} } });
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
         tools: [
@@ -308,7 +267,7 @@ export function createDelegatedServer(connector, config) {
                 console.error(`[mcp-router/delegated] filtered to ${relevantTools.length} tool(s): ${relevantTools.map(t => `${t.mcpName}__${t.name}`).join(", ")}`);
                 const toolIdMap = buildToolIdMap(relevantTools);
                 console.error(`[mcp-router/delegated] select: "${task}" (${toolIdMap.size} candidates)`);
-                const result = await selectTool(task, toolIdMap, config.claude);
+                const result = await selectTool(task, toolIdMap, config, client);
                 console.error(`[mcp-router/delegated] selected tool: ${JSON.stringify(result)}`);
                 return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
             }
@@ -349,7 +308,7 @@ export function createDelegatedServer(connector, config) {
     });
     return server;
 }
-export function createSmartServer(connector, config) {
+export function createSmartServer(connector, config, client) {
     const server = new Server({ name: "mcp-router", version: "1.0.0" }, { capabilities: { tools: {} } });
     // Expose all downstream tools (Windsurf can call them directly)
     // + one special "recommend" tool that Claude uses for classification only
@@ -378,7 +337,7 @@ export function createSmartServer(connector, config) {
             }
             const relevantTools = filterToolsForTask(task, connector.tools);
             console.error(`[mcp-router/smart] Recommending tool for: "${task}" (${relevantTools.length} candidates)`);
-            const recommendation = await recommendTool(task, relevantTools, config.claude);
+            const recommendation = await recommendTool(task, relevantTools, config, client);
             console.error(`[mcp-router/smart] Recommendation: ${recommendation}`);
             return { content: [{ type: "text", text: recommendation }] };
         }
@@ -428,7 +387,7 @@ export function createPassthroughServer(connector) {
 // ---------------------------------------------------------------------------
 // MCP server factory
 // ---------------------------------------------------------------------------
-export function createRouterServer(connector, config) {
+export function createRouterServer(connector, config, client) {
     const server = new McpServer({
         name: "mcp-router",
         version: "1.0.0",
@@ -465,7 +424,7 @@ Examples:
         },
     }, async ({ task }) => {
         try {
-            const result = await runRoutingLoop(task, connector, config.claude);
+            const result = await runRoutingLoop(task, connector, config, client);
             return { content: [{ type: "text", text: result }] };
         }
         catch (err) {

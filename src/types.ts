@@ -24,9 +24,30 @@ export type McpServerConfig = StdioMcpConfig | SseMcpConfig;
 
 export type RouterMode = "router" | "delegated" | "passthrough" | "smart";
 
+export type ProviderType = "anthropic" | "openai-compatible";
+
+export interface ProviderConfig {
+  type: ProviderType;
+  /** Base URL for OpenAI-compatible endpoints (e.g. http://localhost:11434/v1 for Ollama) */
+  baseUrl?: string;
+  /** API key — optional for local endpoints like Ollama; required for Groq/OpenRouter */
+  apiKey?: string;
+  /** Model name */
+  model?: string;
+  /** Max tokens per response */
+  maxTokens?: number;
+  /** Max agentic iterations (router mode only). Default 5 */
+  maxIterations?: number;
+}
+
 export interface RouterConfig {
   /** Named downstream MCP servers */
   mcpServers: Record<string, McpServerConfig>;
+  /**
+   * AI provider. Defaults to Anthropic when omitted (backward compat).
+   * Set type to "openai-compatible" to use Ollama, Groq, LM Studio, OpenRouter, etc.
+   */
+  provider?: ProviderConfig;
   /**
    * Operating mode. Defaults to "router".
    * - router:      1 tool (route). Claude picks + executes. Needs API key.

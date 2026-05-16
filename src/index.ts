@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express from "express";
 import type { RequestHandler } from "express";
 import { McpConnector } from "./connector.js";
+import { createLLMClient } from "./llm.js";
 import {
   createRouterServer,
   createDelegatedServer,
@@ -42,13 +43,15 @@ function loadConfig(): RouterConfig {
 
 function buildServer(connector: McpConnector, config: RouterConfig) {
   const mode = config.mode ?? "router";
-  console.error(`[mcp-router] Mode: ${mode}`);
+  const provider = config.provider?.type ?? "anthropic";
+  console.error(`[mcp-router] Mode: ${mode} | Provider: ${provider}`);
+  const client = createLLMClient(config);
   switch (mode) {
-    case "delegated":    return createDelegatedServer(connector, config);
+    case "delegated":    return createDelegatedServer(connector, config, client);
     case "passthrough":  return createPassthroughServer(connector);
-    case "smart":        return createSmartServer(connector, config);
+    case "smart":        return createSmartServer(connector, config, client);
     case "router":
-    default:             return createRouterServer(connector, config);
+    default:             return createRouterServer(connector, config, client);
   }
 }
 
@@ -143,11 +146,12 @@ async function runHttp(
 async function main(): Promise<void> {
   const config = loadConfig();
   const mode = config.mode ?? "router";
+  const isAnthropicProvider = !config.provider || config.provider.type === "anthropic";
 
-  if (mode !== "passthrough" && !process.env.ANTHROPIC_API_KEY) {
+  if (mode !== "passthrough" && isAnthropicProvider && !process.env.ANTHROPIC_API_KEY) {
     console.error(
-      `[mcp-router] ERROR: ANTHROPIC_API_KEY is required for mode "${mode}". ` +
-        `Set it, or use mode "passthrough" to skip Claude entirely.`
+      `[mcp-router] ERROR: ANTHROPIC_API_KEY is required for mode "${mode}" with the Anthropic provider. ` +
+        `Set it, or configure a free provider (e.g. Ollama) via the "provider" block in your config.`
     );
     process.exit(1);
   }

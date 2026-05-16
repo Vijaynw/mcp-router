@@ -1,18 +1,19 @@
 # mcp-router
 
-> One tool to rule them all — a smart MCP router that uses Claude to automatically pick and call the right downstream MCP tool from your natural language task.
+> Proxy all your MCP servers behind one smart router — choose how much AI you want.
 
-Instead of exposing 50+ tools to your AI editor (Windsurf, Cursor, Claude Desktop, etc.) and hoping it picks the right one, `mcp-router` proxies all your MCP servers behind a **single `route` tool**. Describe what you want in plain English — the router figures out which tool to call.
+Instead of exposing 50+ tools to your AI editor and hoping it picks the right one, `mcp-router` sits in front of all your MCP servers and gives you four modes to match your workflow and budget.
 
-```
-Your prompt → route("create a GitHub issue about X")
-                    ↓
-              Claude picks the right tool
-                    ↓
-              github__create_issue(...)
-                    ↓
-              Result back to you
-```
+---
+
+## Modes at a glance
+
+| Mode | Your editor sees | AI does | API key needed |
+|---|---|---|---|
+| `router` | 1 tool (`route`) | picks **and** executes | yes |
+| `delegated` | 2 tools (`select` + `execute`) | picks only — you review before execution | yes |
+| `passthrough` | all downstream tools directly | nothing | no |
+| `smart` | all tools + `recommend` | recommends only — editor executes | yes |
 
 ---
 
@@ -20,18 +21,14 @@ Your prompt → route("create a GitHub issue about X")
 
 AI editors connect to MCP servers to give agents superpowers — file access, GitHub, databases, Slack, etc. The problem: the more MCP servers you add, the more tools the agent sees. Five servers × ten tools each = 50 tools cluttering every prompt. The agent slows down, picks the wrong tool, or gets confused.
 
-`mcp-router` solves this by:
-
-- **Hiding complexity** — your editor sees exactly 1 tool regardless of how many MCP servers you connect
-- **Intelligent routing** — Claude reads your request and picks the best downstream tool automatically
-- **Multi-step tasks** — for complex requests, Claude chains multiple tool calls in sequence and returns a single answer
+`mcp-router` solves this by standing between your editor and all your MCP servers, letting you control exactly how many tools the editor sees and how much AI is involved.
 
 ---
 
 ## Requirements
 
 - Node.js >= 18
-- An [Anthropic API key](https://console.anthropic.com/)
+- An AI provider (see [Providers](#providers) — Ollama is free and local)
 
 ---
 
@@ -51,10 +48,11 @@ npx mcp-router
 
 ## Quick Start
 
-**1. Create a config file** — `mcp-router.config.json` in your project or home directory:
+**1. Create `mcp-router.config.json`:**
 
 ```json
 {
+  "mode": "router",
   "mcpServers": {
     "filesystem": {
       "type": "stdio",
@@ -65,21 +63,22 @@ npx mcp-router
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_your_token_here"
-      }
+      "env": { "GITHUB_TOKEN": "ghp_your_token_here" }
     }
+  },
+  "claude": {
+    "model": "claude-sonnet-4-6"
   }
 }
 ```
 
-**2. Set your Anthropic API key:**
+**2. Set your API key** (skip if using Ollama):
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-**3. Add to your editor** (Windsurf / Cursor / Claude Desktop):
+**3. Add to your editor** (`~/.windsurf/mcp_config.json`, `~/.cursor/mcp.json`, or `claude_desktop_config.json`):
 
 ```json
 {
@@ -96,47 +95,128 @@ export ANTHROPIC_API_KEY=sk-ant-...
 }
 ```
 
-Restart your editor — you'll see a single `route` tool instead of all the individual tools.
+Restart your editor — you'll see one `route` tool instead of all the individual tools.
 
 ---
 
-## Usage
+## Modes
 
-Once connected, just describe what you want:
+### `router` mode (default)
 
-| You say | Router calls |
-|---|---|
-| `"list files in /tmp"` | `filesystem__list_directory` |
-| `"create a GitHub issue titled 'Bug: login fails'"` | `github__create_issue` |
-| `"search for TODO in all JS files under src/"` | `filesystem__search_files` |
-| `"what's in the README?"` | `filesystem__read_file` |
+Your editor sees **1 tool**: `route(task)`. Describe what you want in plain English — the router picks the right downstream tool, executes it (chaining multiple calls if needed), and returns the result. You never need to know tool names.
 
-For complex tasks, the router chains calls automatically:
+```
+Your editor ──── route("create a GitHub issue about X") ────► mcp-router
+                                                                    │
+                                                            AI picks + calls
+                                                                    │
+                                                        github__create_issue(...)
+                                                                    │
+Your editor ◄─────────────── result ────────────────────────────────┘
+```
 
-> *"Read the package.json, then create a GitHub issue summarising the dependencies"*
-> → reads file → creates issue → returns result
+**Config:**
+```json
+{
+  "mode": "router",
+  "mcpServers": { ... },
+  "claude": { "model": "claude-sonnet-4-6", "maxTokens": 8192, "maxIterations": 5 }
+}
+```
+
+**Best for:** Fully automated pipelines, single-user setups where you trust the AI to execute.
 
 ---
 
-## Configuration
+### `delegated` mode
 
-### `mcp-router.config.json`
+Your editor sees **2 tools**: `select(task)` and `execute(tool, args)`. The AI only *classifies* which tool to use — you (or your editor) review the selection and args before anything runs.
+
+```
+select("get my open GitHub issues")
+        │
+        AI reads names+descriptions only (no schemas — tiny payload)
+        │
+        returns { tool: "github__list_issues", schema: {...}, suggestedArgs: {...}, reason: "..." }
+        │
+[you review in Windsurf/Cursor]
+        │
+execute("github__list_issues", { state: "open" })
+        │
+        router proxies to GitHub MCP — no AI involved
+        │
+        result
+```
+
+**Config:**
+```json
+{
+  "mode": "delegated",
+  "mcpServers": { ... },
+  "claude": { "model": "claude-haiku-4-5-20251001", "maxTokens": 1024 }
+}
+```
+
+**Best for:** Windsurf / Cursor users who want to review tool calls before execution. Most cost-efficient AI mode — Haiku with 1K tokens is sufficient.
+
+---
+
+### `passthrough` mode
+
+Your editor sees **all downstream tools** directly (no AI involved at all). The router acts as a multiplexer — it connects to all your MCP servers and exposes their tools under namespaced names (`server__tool`).
+
+```
+Your editor ──── filesystem__list_directory("/tmp") ────► mcp-router ──► filesystem MCP
+Your editor ──── github__create_issue({...})         ────► mcp-router ──► github MCP
+```
+
+**Config:**
+```json
+{
+  "mode": "passthrough",
+  "mcpServers": { ... }
+}
+```
+
+No API key needed. The router handles connection management and tool namespacing — you still get unified access to all servers through one MCP connection.
+
+**Best for:** Editors with good native tool selection, situations where you want full visibility and control over every call.
+
+---
+
+### `smart` mode
+
+Your editor sees **all downstream tools** (like passthrough) plus one extra `recommend(task)` tool. When you call `recommend`, the AI suggests which tool to use and what args — but the editor executes it directly using its own context.
+
+```
+recommend("search for TODO comments")
+        │
+        AI reads names+descriptions, returns { tool, args, reason }
+        │
+[editor calls the recommended tool directly]
+```
+
+**Config:**
+```json
+{
+  "mode": "smart",
+  "mcpServers": { ... },
+  "claude": { "model": "claude-haiku-4-5-20251001" }
+}
+```
+
+**Best for:** Editors that handle tool execution well but benefit from AI-assisted discovery.
+
+---
+
+## Providers
+
+mcp-router works with **Anthropic Claude** (paid) or any **OpenAI-compatible endpoint** (Ollama, Groq, LM Studio, OpenRouter). Configure via the `provider` block.
+
+### Anthropic Claude (default)
 
 ```json
 {
-  "mcpServers": {
-    "<name>": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["path/to/server.js"],
-      "env": { "MY_TOKEN": "..." }
-    },
-    "<name2>": {
-      "type": "sse",
-      "url": "http://localhost:3001/sse",
-      "headers": { "Authorization": "Bearer token" }
-    }
-  },
   "claude": {
     "model": "claude-sonnet-4-6",
     "maxTokens": 8192,
@@ -145,43 +225,107 @@ For complex tasks, the router chains calls automatically:
 }
 ```
 
-#### `mcpServers` fields
+Requires `ANTHROPIC_API_KEY` env var. Available models: `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`, `claude-opus-4-7`.
+
+### Ollama — free, runs locally
+
+```bash
+ollama serve
+ollama pull llama3.1:8b
+```
+
+```json
+{
+  "provider": {
+    "type": "openai-compatible",
+    "baseUrl": "http://localhost:11434/v1",
+    "model": "llama3.1:8b",
+    "apiKey": "ollama"
+  }
+}
+```
+
+No API key env var needed. Any model with tool-calling support works for `router` mode (`llama3.1`, `mistral`, `qwen2.5`). Any model works for `delegated` and `smart` modes.
+
+### Groq — free tier, fast cloud inference
+
+Get a free API key at [console.groq.com](https://console.groq.com).
+
+```json
+{
+  "provider": {
+    "type": "openai-compatible",
+    "baseUrl": "https://api.groq.com/openai/v1",
+    "model": "llama-3.1-8b-instant",
+    "apiKey": "gsk_your_key_here"
+  }
+}
+```
+
+### LM Studio / OpenRouter
+
+Same pattern — set `baseUrl` to your endpoint and `model` to the model name.
+
+### `provider` fields
+
+| Field | Required | Description |
+|---|---|---|
+| `type` | yes | `"openai-compatible"` |
+| `baseUrl` | yes | Base URL of the OpenAI-compatible API |
+| `model` | yes | Model name (provider-specific) |
+| `apiKey` | no | API key — optional for local endpoints like Ollama |
+| `maxTokens` | no | Max tokens per response (default: 8192 for router, 1024 for delegated/smart) |
+| `maxIterations` | no | Max agentic iterations in router mode (default: 5) |
+
+---
+
+## Configuration reference
+
+### `mcp-router.config.json`
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `mcpServers` | object | required | Map of named downstream MCP servers |
+| `mode` | string | `"router"` | `router`, `delegated`, `passthrough`, or `smart` |
+| `provider` | object | — | AI provider config (Ollama, Groq, etc.) — overrides `claude` block |
+| `claude` | object | — | Anthropic provider config |
+| `claude.model` | string | `claude-sonnet-4-6` | Claude model |
+| `claude.maxTokens` | number | `8192` | Max tokens per response |
+| `claude.maxIterations` | number | `5` | Max tool calls chained per request (router mode) |
+
+### Server types
 
 **`stdio`** — spawns a local process (most MCP servers):
 
-| Field | Required | Description |
-|---|---|---|
-| `type` | yes | `"stdio"` |
-| `command` | yes | Executable to run (e.g. `"npx"`, `"node"`, `"python"`) |
-| `args` | yes | Arguments array passed to the command |
-| `env` | no | Extra environment variables merged into the child process |
+```json
+{
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"],
+  "env": { "EXTRA_VAR": "value" }
+}
+```
 
 **`sse`** — connects to a remote SSE endpoint:
 
-| Field | Required | Description |
-|---|---|---|
-| `type` | yes | `"sse"` |
-| `url` | yes | Full SSE endpoint URL (e.g. `"http://localhost:3001/sse"`) |
-| `headers` | no | HTTP headers to include (e.g. `Authorization`) |
-
-#### `claude` fields (all optional)
-
-| Field | Default | Description |
-|---|---|---|
-| `model` | `claude-sonnet-4-6` | Claude model used for routing |
-| `maxTokens` | `8192` | Max tokens per Claude response |
-| `maxIterations` | `5` | Max tool calls chained per request before returning a partial answer |
+```json
+{
+  "type": "sse",
+  "url": "http://localhost:3001/sse",
+  "headers": { "Authorization": "Bearer token" }
+}
+```
 
 ### Environment variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | — | **Required.** Your Anthropic API key |
+| `ANTHROPIC_API_KEY` | — | Required when using Anthropic provider |
 | `MCP_ROUTER_CONFIG` | `./mcp-router.config.json` | Path to config file |
 | `TRANSPORT` | `stdio` | `stdio` or `http` |
 | `PORT` | `3000` | HTTP port (when `TRANSPORT=http`) |
 | `HOST` | `127.0.0.1` | HTTP bind address (when `TRANSPORT=http`) |
-| `MCP_ROUTER_TOKEN` | — | Bearer token to protect HTTP endpoints. If set, all requests must include `Authorization: Bearer <token>` |
+| `MCP_ROUTER_TOKEN` | — | Bearer token to protect HTTP endpoints |
 
 ---
 
@@ -196,96 +340,22 @@ TRANSPORT=http PORT=3000 ANTHROPIC_API_KEY=sk-ant-... npx mcp-router
 - **MCP endpoint:** `POST http://127.0.0.1:3000/mcp`
 - **Health check:** `GET http://127.0.0.1:3000/health`
 
-The health endpoint returns the number of connected tools and servers:
-
 ```json
 { "status": "ok", "tools": 14, "servers": ["filesystem", "github"] }
 ```
 
 ---
 
-## Editor Setup
-
-### Windsurf
-
-Edit `~/.windsurf/mcp_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "router": {
-      "command": "npx",
-      "args": ["mcp-router"],
-      "env": {
-        "ANTHROPIC_API_KEY": "sk-ant-...",
-        "MCP_ROUTER_CONFIG": "/absolute/path/to/mcp-router.config.json"
-      }
-    }
-  }
-}
-```
-
-### Cursor
-
-Edit `~/.cursor/mcp.json` with the same format as above.
-
-### Claude Desktop
-
-Edit `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "router": {
-      "command": "npx",
-      "args": ["mcp-router"],
-      "env": {
-        "ANTHROPIC_API_KEY": "sk-ant-...",
-        "MCP_ROUTER_CONFIG": "/Users/you/mcp-router.config.json"
-      }
-    }
-  }
-}
-```
-
----
-
-## How It Works
-
-```
-┌─────────────┐        route(task)         ┌──────────────────┐
-│  Windsurf / │ ─────────────────────────► │                  │
-│  Cursor /   │                            │   mcp-router     │
-│  Claude     │ ◄───────────────────────── │                  │
-└─────────────┘        result              └────────┬─────────┘
-                                                    │
-                                          Claude picks tool
-                                                    │
-                          ┌─────────────────────────┼──────────────────────┐
-                          ▼                         ▼                      ▼
-                  ┌───────────────┐      ┌─────────────────┐    ┌──────────────────┐
-                  │  filesystem   │      │     github      │    │   your-mcp-xyz   │
-                  │  MCP server   │      │   MCP server    │    │    MCP server    │
-                  └───────────────┘      └─────────────────┘    └──────────────────┘
-```
-
-1. On startup, the router connects to every server in your config and **caches all their tools**
-2. When `route(task)` is called, it sends your task + all discovered tools to Claude
-3. Claude picks the best tool (or chains multiple tools for complex tasks) — first iteration forces a tool call, subsequent ones let Claude decide when it's done
-4. The router executes the call(s) on the correct downstream server and returns the result
-
-Tool names are encoded as `{server}__{tool}` (e.g. `github__create_issue`) and sanitised to match Anthropic's naming constraints. Cross-server collisions are handled automatically with a numeric suffix.
-
----
-
 ## Cost
 
-Each `route` call makes **one Claude API call** (plus one more per additional chained tool call if multi-step). With `claude-sonnet-4-6`:
+| Mode | AI calls per request | Cheapest model | Approx cost |
+|---|---|---|---|
+| `router` | 1 + 1 per chained tool call | Haiku / Llama 3.1 8B | ~$0.0005–0.015 |
+| `delegated` | 1 (classification only) | Haiku / Llama 3.1 8B | ~$0.0001–0.0003 |
+| `smart` | 1 (recommendation only) | Haiku / Llama 3.1 8B | ~$0.0001–0.0003 |
+| `passthrough` | 0 | — | free |
 
-- Simple single-tool task: ~$0.001–0.003
-- Multi-step task (3–5 tool calls): ~$0.005–0.015
-
-For occasional use in an editor this is negligible. For high-volume automated pipelines, set `"model": "claude-haiku-4-5-20251001"` in the `claude` block of your config.
+Using Ollama or Groq's free tier makes all AI modes effectively free.
 
 ---
 
@@ -293,25 +363,23 @@ For occasional use in an editor this is negligible. For high-volume automated pi
 
 ### Config file
 
-**Never commit `mcp-router.config.json` to version control** — it may contain API tokens and credentials. `mcp-router.config.json` is already listed in `.gitignore`. Use `mcp-router.config.example.json` (included in the repo) as a template.
+**Never commit `mcp-router.config.json`** — it may contain API keys and tokens. It is listed in `.gitignore`. Use `mcp-router.config.example.json` as a template.
 
 ### HTTP mode
 
-HTTP mode exposes all configured downstream tools over the network. Before using it:
-
-- **Always set `MCP_ROUTER_TOKEN`** so only authorised clients can call the router:
+- **Always set `MCP_ROUTER_TOKEN`** when running HTTP mode:
   ```bash
-  MCP_ROUTER_TOKEN=your-secret-token TRANSPORT=http npx mcp-router
+  MCP_ROUTER_TOKEN=your-secret TRANSPORT=http npx mcp-router
   ```
-  Clients must then send `Authorization: Bearer your-secret-token` with every request.
+  All requests must include `Authorization: Bearer your-secret`.
 
-- **Never bind to `0.0.0.0` without authentication.** The default `HOST=127.0.0.1` is safe for local use. Exposing the router publicly without a token allows anyone to invoke all your configured MCP tools using your embedded credentials.
+- **Never bind to `0.0.0.0` without authentication.** The default `HOST=127.0.0.1` is safe for local use.
 
 - For internet-facing deployments, put the router behind a reverse proxy (nginx, Caddy) that handles TLS.
 
 ### Stdio mode
 
-Stdio mode only accepts connections from the local editor process — no network exposure. This is the safest mode for personal use.
+Only accepts connections from the local editor process — no network exposure. Safest for personal use.
 
 ---
 
@@ -321,7 +389,6 @@ Stdio mode only accepts connections from the local editor process — no network
 git clone https://github.com/vijaynw/mcp-router
 cd mcp-router
 npm install
-npm run dev     # watch mode (tsx)
 npm run build   # compile to dist/
 npm start       # run compiled output
 ```
