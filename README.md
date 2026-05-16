@@ -181,6 +181,7 @@ For complex tasks, the router chains calls automatically:
 | `TRANSPORT` | `stdio` | `stdio` or `http` |
 | `PORT` | `3000` | HTTP port (when `TRANSPORT=http`) |
 | `HOST` | `127.0.0.1` | HTTP bind address (when `TRANSPORT=http`) |
+| `MCP_ROUTER_TOKEN` | — | Bearer token to protect HTTP endpoints. If set, all requests must include `Authorization: Bearer <token>` |
 
 ---
 
@@ -285,6 +286,32 @@ Each `route` call makes **one Claude API call** (plus one more per additional ch
 - Multi-step task (3–5 tool calls): ~$0.005–0.015
 
 For occasional use in an editor this is negligible. For high-volume automated pipelines, set `"model": "claude-haiku-4-5-20251001"` in the `claude` block of your config.
+
+---
+
+## Security Considerations
+
+### Config file
+
+**Never commit `mcp-router.config.json` to version control** — it may contain API tokens and credentials. `mcp-router.config.json` is already listed in `.gitignore`. Use `mcp-router.config.example.json` (included in the repo) as a template.
+
+### HTTP mode
+
+HTTP mode exposes all configured downstream tools over the network. Before using it:
+
+- **Always set `MCP_ROUTER_TOKEN`** so only authorised clients can call the router:
+  ```bash
+  MCP_ROUTER_TOKEN=your-secret-token TRANSPORT=http npx mcp-router
+  ```
+  Clients must then send `Authorization: Bearer your-secret-token` with every request.
+
+- **Never bind to `0.0.0.0` without authentication.** The default `HOST=127.0.0.1` is safe for local use. Exposing the router publicly without a token allows anyone to invoke all your configured MCP tools using your embedded credentials.
+
+- For internet-facing deployments, put the router behind a reverse proxy (nginx, Caddy) that handles TLS.
+
+### Stdio mode
+
+Stdio mode only accepts connections from the local editor process — no network exposure. This is the safest mode for personal use.
 
 ---
 
