@@ -1,7 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-const anthropic = new Anthropic();
+// Lazy-initialize the Anthropic client so the module can be imported safely
+// when no API key is present (e.g. in tests or passthrough mode).
+let _anthropic = null;
+function getAnthropicClient() {
+    if (!_anthropic) {
+        _anthropic = new Anthropic({ timeout: 120_000 }); // 2-minute timeout per call
+    }
+    return _anthropic;
+}
 // ---------------------------------------------------------------------------
 // Tool-name encoding
 // Anthropic tool names must match ^[a-zA-Z0-9_-]{1,64}$
@@ -36,10 +44,19 @@ const SYSTEM_PROMPT = `You are a tool dispatcher. The user will describe a task.
 Use the available tools to complete it. Call tools as needed — you may call
 multiple tools in sequence if the task requires it. When the task is done,
 reply with a concise summary of what you did and the result.`;
+// Known Claude models — warn on unrecognised values to catch config typos early.
+const KNOWN_MODELS = new Set([
+    "claude-opus-4-7",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5-20251001",
+]);
 async function runRoutingLoop(task, connector, claudeConfig) {
     const model = claudeConfig?.model ?? "claude-sonnet-4-6";
     const maxTokens = claudeConfig?.maxTokens ?? 8192;
     const maxIterations = claudeConfig?.maxIterations ?? 5;
+    if (!KNOWN_MODELS.has(model)) {
+        console.error(`[mcp-router] WARNING: Unrecognised model "${model}". Known models: ${[...KNOWN_MODELS].join(", ")}`);
+    }
     const toolIdMap = buildToolIdMap(connector.tools);
     if (toolIdMap.size === 0) {
         return "Error: No downstream tools available. Check your mcp-router.config.json.";
@@ -49,7 +66,7 @@ async function runRoutingLoop(task, connector, claudeConfig) {
         { role: "user", content: task },
     ];
     for (let i = 0; i < maxIterations; i++) {
-        const response = await anthropic.messages.create({
+        const response = await getAnthropicClient().messages.create({
             model,
             max_tokens: maxTokens,
             system: SYSTEM_PROMPT,
