@@ -6,7 +6,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express from "express";
 import type { RequestHandler } from "express";
 import { McpConnector } from "./connector.js";
-import { createRouterServer } from "./router.js";
+import { createRouterServer, createPassthroughServer } from "./router.js";
+import { RouterConfigSchema } from "./types.js";
 import type { RouterConfig } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -20,7 +21,17 @@ function loadConfig(): RouterConfig {
 
   try {
     const raw = readFileSync(configPath, "utf-8");
-    return JSON.parse(raw) as RouterConfig;
+    const parsed = RouterConfigSchema.safeParse(JSON.parse(raw));
+    if (!parsed.success) {
+      console.error(
+        `[mcp-router] ERROR: Invalid config at "${configPath}":\n` +
+          parsed.error.issues
+            .map((i) => `  • ${i.path.join(".")}: ${i.message}`)
+            .join("\n")
+      );
+      process.exit(1);
+    }
+    return parsed.data;
   } catch (err) {
     console.error(
       `[mcp-router] ERROR: Could not load config from "${configPath}"\n` +
@@ -37,9 +48,12 @@ function loadConfig(): RouterConfig {
 
 async function runStdio(
   connector: McpConnector,
-  config: RouterConfig
+  config: RouterConfig,
+  hasApiKey: boolean
 ): Promise<void> {
-  const server = createRouterServer(connector, config);
+  const server = hasApiKey
+    ? createRouterServer(connector, config)
+    : createPassthroughServer(connector);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("[mcp-router] Running via stdio — ready.");
@@ -47,7 +61,8 @@ async function runStdio(
 
 async function runHttp(
   connector: McpConnector,
-  config: RouterConfig
+  config: RouterConfig,
+  hasApiKey: boolean
 ): Promise<void> {
   const port = parseInt(process.env.PORT ?? "3000", 10);
   const host = process.env.HOST ?? "127.0.0.1";
@@ -85,7 +100,9 @@ async function runHttp(
   };
 
   // Create the McpServer once; create a new transport per request (stateless).
-  const server = createRouterServer(connector, config);
+  const server = hasApiKey
+    ? createRouterServer(connector, config)
+    : createPassthroughServer(connector);
 
   app.post("/mcp", requireAuth, async (req, res) => {
     const transport = new StreamableHTTPServerTransport({
@@ -121,11 +138,13 @@ async function runHttp(
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  const hasApiKey = Boolean(process.env.ANTHROPIC_API_KEY);
+
+  if (!hasApiKey) {
     console.error(
-      "[mcp-router] ERROR: ANTHROPIC_API_KEY environment variable is required."
+      "[mcp-router] No ANTHROPIC_API_KEY found — starting in passthrough mode. " +
+        "All downstream tools are exposed directly without AI routing."
     );
-    process.exit(1);
   }
 
   const config = loadConfig();
@@ -136,9 +155,9 @@ async function main(): Promise<void> {
   const transport = process.env.TRANSPORT ?? "stdio";
 
   if (transport === "http") {
-    await runHttp(connector, config);
+    await runHttp(connector, config, hasApiKey);
   } else {
-    await runStdio(connector, config);
+    await runStdio(connector, config, hasApiKey);
   }
 
   const shutdown = async () => {

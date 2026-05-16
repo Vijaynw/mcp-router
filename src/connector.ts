@@ -178,6 +178,31 @@ export class McpConnector {
     }
   }
 
+  /**
+   * Execute a tool and return the raw MCP content array (used by passthrough mode).
+   */
+  async callToolRaw(
+    tool: DiscoveredTool,
+    toolArgs: Record<string, unknown>
+  ): Promise<{ content: unknown[]; isError?: boolean }> {
+    const server = this.servers.find((s) => s.name === tool.mcpName);
+    if (!server) {
+      return {
+        content: [{ type: "text", text: `Error: Server "${tool.mcpName}" is not connected.` }],
+        isError: true,
+      };
+    }
+    try {
+      const raw = await server.client.callTool({ name: tool.name, arguments: toolArgs });
+      return raw as { content: unknown[]; isError?: boolean };
+    } catch (err) {
+      return {
+        content: [{ type: "text", text: `Error calling "${tool.name}": ${err instanceof Error ? err.message : String(err)}` }],
+        isError: true,
+      };
+    }
+  }
+
   async disconnectAll(): Promise<void> {
     await Promise.allSettled(
       this.servers.map(({ client }) => client.close())

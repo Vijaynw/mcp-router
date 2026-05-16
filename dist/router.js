@@ -1,5 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { ListToolsRequestSchema, CallToolRequestSchema, } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 // Lazy-initialize the Anthropic client so the module can be imported safely
 // when no API key is present (e.g. in tests or passthrough mode).
@@ -66,15 +68,31 @@ async function runRoutingLoop(task, connector, claudeConfig) {
         { role: "user", content: task },
     ];
     for (let i = 0; i < maxIterations; i++) {
+        // Attach cache_control to the last tool so Anthropic caches the entire
+        // tools list + system prompt prefix. This cuts costs ~80% on repeated calls.
+        const cachedTools = anthropicTools.length > 0
+            ? [
+                ...anthropicTools.slice(0, -1),
+                { ...anthropicTools.at(-1), cache_control: { type: "ephemeral" } },
+            ]
+            : anthropicTools;
         const response = await getAnthropicClient().messages.create({
             model,
             max_tokens: maxTokens,
-            system: SYSTEM_PROMPT,
-            tools: anthropicTools,
+            system: [
+                {
+                    type: "text",
+                    text: SYSTEM_PROMPT,
+                    cache_control: { type: "ephemeral" },
+                },
+            ],
+            tools: cachedTools,
             // Force a tool call on the first turn; auto on subsequent turns so
             // Claude can decide when it's done.
             tool_choice: i === 0 ? { type: "any" } : { type: "auto" },
             messages,
+            betas: ["prompt-caching-2024-07-31"],
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
         });
         const toolUseBlocks = response.content.filter((b) => b.type === "tool_use");
         const textBlocks = response.content.filter((b) => b.type === "text");
@@ -106,6 +124,38 @@ async function runRoutingLoop(task, connector, claudeConfig) {
         messages.push({ role: "user", content: toolResults });
     }
     return "Error: Reached the maximum number of routing iterations without completing the task. Try a more specific request.";
+}
+// ---------------------------------------------------------------------------
+// Dry-run plan loop
+// ---------------------------------------------------------------------------
+const PLAN_SYSTEM_PROMPT = `You are a tool dispatcher. The user will describe a task.
+Do NOT call any tools. Instead, respond with a step-by-step plan describing:
+- Which tool you would call at each step (use the exact tool name)
+- What arguments you would pass
+- Why you chose that tool
+
+Format as a numbered list. Be specific about argument values where possible.`;
+async function runPlanLoop(task, connector, claudeConfig) {
+    const model = claudeConfig?.model ?? "claude-sonnet-4-6";
+    const maxTokens = claudeConfig?.maxTokens ?? 8192;
+    const toolIdMap = buildToolIdMap(connector.tools);
+    if (toolIdMap.size === 0) {
+        return "Error: No downstream tools available. Check your mcp-router.config.json.";
+    }
+    const anthropicTools = toAnthropicTools(toolIdMap);
+    const response = await getAnthropicClient().messages.create({
+        model,
+        max_tokens: maxTokens,
+        system: PLAN_SYSTEM_PROMPT,
+        tools: anthropicTools,
+        tool_choice: { type: "none" },
+        messages: [{ role: "user", content: task }],
+    });
+    const text = response.content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
+    return text || "No plan generated.";
 }
 // ---------------------------------------------------------------------------
 // MCP server factory
@@ -157,6 +207,68 @@ Examples:
                 isError: true,
             };
         }
+    });
+    server.registerTool("route_plan", {
+        title: "Preview Routing Plan (Dry Run)",
+        description: `Same as 'route' but does NOT execute anything. Returns a step-by-step
+plan showing which tools would be called and with what arguments.
+Use this before running destructive or multi-step operations to verify the plan.`,
+        inputSchema: z.object({
+            task: z
+                .string()
+                .min(1, "Task must not be empty")
+                .describe("The task you want to preview"),
+        }),
+        annotations: {
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+        },
+    }, async ({ task }) => {
+        try {
+            const plan = await runPlanLoop(task, connector, config.claude);
+            return { content: [{ type: "text", text: plan }] };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return {
+                content: [{ type: "text", text: `Plan error: ${msg}` }],
+                isError: true,
+            };
+        }
+    });
+    return server;
+}
+// ---------------------------------------------------------------------------
+// Passthrough server (no API key required)
+// Exposes all downstream tools directly — no AI routing.
+// ---------------------------------------------------------------------------
+export function createPassthroughServer(connector) {
+    const toolIdMap = buildToolIdMap(connector.tools);
+    const server = new Server({ name: "mcp-router", version: "1.0.0" }, {
+        capabilities: { tools: {} },
+    });
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+        tools: Array.from(toolIdMap.entries()).map(([id, tool]) => ({
+            name: id,
+            description: `[server: ${tool.mcpName}] ${tool.description}`,
+            inputSchema: tool.inputSchema,
+        })),
+    }));
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+        const toolName = request.params.name;
+        const toolArgs = (request.params.arguments ?? {});
+        const tool = toolIdMap.get(toolName);
+        if (!tool) {
+            return {
+                content: [{ type: "text", text: `Error: Tool "${toolName}" not found.` }],
+                isError: true,
+            };
+        }
+        console.error(`[mcp-router] passthrough → ${toolName}(${JSON.stringify(toolArgs)})`);
+        const result = await connector.callToolRaw(tool, toolArgs);
+        return result;
     });
     return server;
 }

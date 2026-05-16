@@ -1,39 +1,40 @@
+import { z } from "zod";
+
 // ---------------------------------------------------------------------------
 // Config file shape  (mcp-router.config.json)
 // ---------------------------------------------------------------------------
 
-export interface StdioMcpConfig {
-  type: "stdio";
-  /** Executable to spawn, e.g. "node" or "python" */
-  command: string;
-  /** Arguments passed to the command */
-  args: string[];
-  /** Optional extra env vars merged into the child process environment */
-  env?: Record<string, string>;
-}
+export const RouterConfigSchema = z.object({
+  mcpServers: z
+    .record(
+      z.discriminatedUnion("type", [
+        z.object({
+          type: z.literal("stdio"),
+          command: z.string().min(1, "command must not be empty"),
+          args: z.array(z.string()).default([]),
+          env: z.record(z.string()).optional(),
+        }),
+        z.object({
+          type: z.literal("sse"),
+          url: z.string().url("url must be a valid URL"),
+          headers: z.record(z.string()).optional(),
+        }),
+      ])
+    )
+    .refine((s) => Object.keys(s).length > 0, "mcpServers must not be empty"),
+  claude: z
+    .object({
+      model: z.string().optional(),
+      maxTokens: z.number().positive().optional(),
+      maxIterations: z.number().positive().optional(),
+    })
+    .optional(),
+});
 
-export interface SseMcpConfig {
-  type: "sse";
-  /** Full URL of the SSE endpoint, e.g. "http://localhost:3001/sse" */
-  url: string;
-  /** Optional HTTP headers (e.g. authorization) */
-  headers?: Record<string, string>;
-}
-
-export type McpServerConfig = StdioMcpConfig | SseMcpConfig;
-
-export interface RouterConfig {
-  /** Named downstream MCP servers */
-  mcpServers: Record<string, McpServerConfig>;
-  claude?: {
-    /** Defaults to claude-sonnet-4-6 */
-    model?: string;
-    /** Defaults to 8192 */
-    maxTokens?: number;
-    /** Max routing iterations before returning a partial answer. Defaults to 5 */
-    maxIterations?: number;
-  };
-}
+export type RouterConfig = z.infer<typeof RouterConfigSchema>;
+export type StdioMcpConfig = Extract<RouterConfig["mcpServers"][string], { type: "stdio" }>;
+export type SseMcpConfig = Extract<RouterConfig["mcpServers"][string], { type: "sse" }>;
+export type McpServerConfig = RouterConfig["mcpServers"][string];
 
 // ---------------------------------------------------------------------------
 // Runtime types

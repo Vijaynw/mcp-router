@@ -21,6 +21,13 @@ export declare class McpConnector {
      * collisions since we look up the server by mcpName directly.
      */
     callToolEntry(tool: DiscoveredTool, toolArgs: Record<string, unknown>): Promise<string>;
+    /**
+     * Execute a tool and return the raw MCP content array (used by passthrough mode).
+     */
+    callToolRaw(tool: DiscoveredTool, toolArgs: Record<string, unknown>): Promise<{
+        content: unknown[];
+        isError?: boolean;
+    }>;
     disconnectAll(): Promise<void>;
 }
 //# sourceMappingURL=connector.d.ts.map

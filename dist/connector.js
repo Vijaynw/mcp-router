@@ -111,6 +111,28 @@ export class McpConnector {
             return `Error calling "${tool.name}": ${err instanceof Error ? err.message : String(err)}`;
         }
     }
+    /**
+     * Execute a tool and return the raw MCP content array (used by passthrough mode).
+     */
+    async callToolRaw(tool, toolArgs) {
+        const server = this.servers.find((s) => s.name === tool.mcpName);
+        if (!server) {
+            return {
+                content: [{ type: "text", text: `Error: Server "${tool.mcpName}" is not connected.` }],
+                isError: true,
+            };
+        }
+        try {
+            const raw = await server.client.callTool({ name: tool.name, arguments: toolArgs });
+            return raw;
+        }
+        catch (err) {
+            return {
+                content: [{ type: "text", text: `Error calling "${tool.name}": ${err instanceof Error ? err.message : String(err)}` }],
+                isError: true,
+            };
+        }
+    }
     async disconnectAll() {
         await Promise.allSettled(this.servers.map(({ client }) => client.close()));
     }

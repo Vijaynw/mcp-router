@@ -116,6 +116,25 @@ For complex tasks, the router chains calls automatically:
 > *"Read the package.json, then create a GitHub issue summarising the dependencies"*
 > → reads file → creates issue → returns result
 
+### Dry Run (preview without executing)
+
+Use the `route_plan` tool to see what the router *would* do — without executing anything:
+
+```
+route_plan("delete all .tmp files in /home/user and open a GitHub issue summarising what was removed")
+
+→ Plan:
+  Step 1: filesystem__list_directory({ path: "/home/user" }) — list to find .tmp files
+  Step 2: filesystem__delete_file({ path: "..." }) × N — remove each .tmp file
+  Step 3: github__create_issue({ title: "Cleanup: N .tmp files removed", body: "..." })
+```
+
+This is useful before destructive or multi-step operations.
+
+### Passthrough Mode (no API key required)
+
+If `ANTHROPIC_API_KEY` is not set, the router starts in **passthrough mode**: all downstream tools are exposed directly as individual MCP tools with no AI routing. Useful when you just want an MCP aggregator or when testing without using the Claude API.
+
 ---
 
 ## Configuration
@@ -176,7 +195,7 @@ For complex tasks, the router chains calls automatically:
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | — | **Required.** Your Anthropic API key |
+| `ANTHROPIC_API_KEY` | — | Your Anthropic API key. If omitted, router starts in passthrough mode (all tools exposed directly, no AI routing) |
 | `MCP_ROUTER_CONFIG` | `./mcp-router.config.json` | Path to config file |
 | `TRANSPORT` | `stdio` | `stdio` or `http` |
 | `PORT` | `3000` | HTTP port (when `TRANSPORT=http`) |
