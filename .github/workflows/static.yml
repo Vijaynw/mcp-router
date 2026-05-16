@@ -36,8 +36,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
-          path: '.'
+          # Deploy only the marketing directory so index.html is at the site root
+          path: './marketing'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
