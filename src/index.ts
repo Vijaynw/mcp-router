@@ -4,6 +4,7 @@ import { resolve } from "path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
+import type { RequestHandler } from "express";
 import { McpConnector } from "./connector.js";
 import { createRouterServer } from "./router.js";
 import type { RouterConfig } from "./types.js";
@@ -50,14 +51,43 @@ async function runHttp(
 ): Promise<void> {
   const port = parseInt(process.env.PORT ?? "3000", 10);
   const host = process.env.HOST ?? "127.0.0.1";
+  const token = process.env.MCP_ROUTER_TOKEN;
 
   const app = express();
-  app.use(express.json());
+
+  // Limit request body size to prevent memory exhaustion
+  app.use(express.json({ limit: "1mb" }));
+
+  // Security headers
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("X-XSS-Protection", "1; mode=block");
+    next();
+  });
+
+  if (!token) {
+    console.error(
+      "[mcp-router] WARNING: MCP_ROUTER_TOKEN is not set. " +
+        "HTTP mode is unauthenticated — ensure the server is only reachable from trusted networks."
+    );
+  }
+
+  // Bearer token guard — only enforced when MCP_ROUTER_TOKEN is set
+  const requireAuth: RequestHandler = (req, res, next) => {
+    if (!token) return next();
+    const auth = req.headers.authorization;
+    if (auth !== `Bearer ${token}`) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    next();
+  };
 
   // Create the McpServer once; create a new transport per request (stateless).
   const server = createRouterServer(connector, config);
 
-  app.post("/mcp", async (req, res) => {
+  app.post("/mcp", requireAuth, async (req, res) => {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
@@ -68,7 +98,7 @@ async function runHttp(
   });
 
   // Health check
-  app.get("/health", (_req, res) => {
+  app.get("/health", requireAuth, (_req, res) => {
     res.json({
       status: "ok",
       tools: connector.tools.length,
