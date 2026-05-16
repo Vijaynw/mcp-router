@@ -5,162 +5,701 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>mcp-router — One tool to rule them all</title>
   <meta name="description" content="Smart MCP router that uses Claude to automatically pick and call the right downstream MCP tool from your natural language task.">
-  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    * { font-family: 'Inter', sans-serif; }
-    .gradient-text {
-      background: linear-gradient(135deg, #000000 0%, #333333 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+    :root {
+      --black: #0a0a0a;
+      --black-light: #111111;
+      --black-card: #161616;
+      --amber: #f0b232;
+      --amber-dim: #c4912a;
+      --amber-glow: rgba(240, 178, 50, 0.15);
+      --green: #3ddc84;
+      --green-dim: rgba(61, 220, 132, 0.7);
+      --gray-100: #e5e5e5;
+      --gray-300: #a3a3a3;
+      --gray-500: #6b6b6b;
+      --gray-700: #2a2a2a;
+      --gray-800: #1e1e1e;
     }
-    .gradient-bg {
-      background: linear-gradient(135deg, #000000 0%, #333333 100%);
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--black);
+      color: var(--gray-100);
+      font-family: 'DM Sans', sans-serif;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
     }
-    .card-hover {
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
+
+    /* ---- Noise overlay ---- */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.03;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-repeat: repeat;
+      background-size: 256px;
     }
-    .card-hover:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+
+    /* ---- Typography ---- */
+    .font-display { font-family: 'Instrument Serif', serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* ---- Utilities ---- */
+    .container { max-width: 1120px; margin: 0 auto; padding: 0 clamp(1.5rem, 4vw, 3rem); }
+
+    .amber { color: var(--amber); }
+    .green { color: var(--green); }
+
+    .glow-line {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--amber), transparent);
+      opacity: 0.3;
     }
-    .code-block {
-      background: #1e1e1e;
+
+    /* ---- Scroll animations ---- */
+    .reveal {
+      opacity: 0;
+      transform: translateY(32px);
+      transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ---- Nav ---- */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      padding: 1.25rem 0;
+      backdrop-filter: blur(16px);
+      background: rgba(10, 10, 10, 0.8);
+      border-bottom: 1px solid var(--gray-700);
+    }
+    nav .inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+      color: var(--gray-100);
+    }
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      background: var(--amber);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--black);
+    }
+    .logo span { font-weight: 700; font-size: 1.1rem; letter-spacing: -0.02em; }
+    .nav-links { display: flex; align-items: center; gap: 2rem; }
+    .nav-links a {
+      color: var(--gray-500);
+      text-decoration: none;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--gray-100); }
+    .nav-cta {
+      background: var(--amber) !important;
+      color: var(--black) !important;
+      padding: 0.5rem 1.25rem;
+      border-radius: 6px;
+      font-weight: 600 !important;
+      transition: opacity 0.2s !important;
+    }
+    .nav-cta:hover { opacity: 0.85; }
+
+    /* ---- Hero ---- */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      position: relative;
+      padding-top: 5rem;
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+    .hero-badge {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--amber);
+      border: 1px solid rgba(240, 178, 50, 0.3);
+      padding: 0.35rem 0.85rem;
+      border-radius: 4px;
+      margin-bottom: 1.5rem;
+      letter-spacing: 0.05em;
+    }
+    .hero h1 {
+      font-family: 'Instrument Serif', serif;
+      font-size: clamp(3rem, 5.5vw, 4.5rem);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+      color: #fff;
+    }
+    .hero h1 em {
+      font-style: italic;
+      color: var(--amber);
+    }
+    .hero-sub {
+      font-size: 1.125rem;
+      color: var(--gray-300);
+      line-height: 1.7;
+      max-width: 460px;
+      margin-bottom: 2.5rem;
+    }
+    .hero-buttons { display: flex; gap: 1rem; }
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--amber);
+      color: var(--black);
+      padding: 0.85rem 2rem;
       border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+      border: none;
+      cursor: pointer;
     }
-    .flow-arrow {
-      animation: pulse 2s infinite;
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px var(--amber-glow);
     }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: transparent;
+      color: var(--gray-300);
+      padding: 0.85rem 2rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-decoration: none;
+      border: 1px solid var(--gray-700);
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-secondary:hover {
+      border-color: var(--gray-500);
+      color: var(--gray-100);
+    }
+
+    /* ---- Terminal block ---- */
+    .terminal {
+      background: var(--black-card);
+      border: 1px solid var(--gray-700);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+    }
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--gray-700);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .terminal-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--gray-700);
+    }
+    .terminal-dot:nth-child(1) { background: #ff5f57; }
+    .terminal-dot:nth-child(2) { background: #febc2e; }
+    .terminal-dot:nth-child(3) { background: #28c840; }
+    .terminal-title {
+      margin-left: auto;
+      margin-right: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--gray-500);
+    }
+    .terminal-body {
+      padding: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      line-height: 1.8;
+    }
+    .terminal-body .prompt { color: var(--amber); }
+    .terminal-body .cmd { color: #fff; }
+    .terminal-body .comment { color: var(--gray-500); }
+    .terminal-body .output { color: var(--green); }
+    .terminal-body .dim { color: var(--gray-500); }
+
+    .cursor-blink {
+      display: inline-block;
+      width: 8px;
+      height: 16px;
+      background: var(--amber);
+      margin-left: 2px;
+      vertical-align: text-bottom;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+
+    /* ---- Section styles ---- */
+    section { padding: 7rem 0; }
+
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--amber);
+      margin-bottom: 1rem;
+    }
+    .section-title {
+      font-family: 'Instrument Serif', serif;
+      font-size: clamp(2rem, 4vw, 3rem);
+      color: #fff;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+    }
+    .section-sub {
+      font-size: 1.05rem;
+      color: var(--gray-500);
+      max-width: 520px;
+      line-height: 1.7;
+    }
+
+    /* ---- Problem / Solution ---- */
+    .problem-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      margin-top: 4rem;
+      align-items: start;
+    }
+    .problem-card, .solution-card {
+      background: var(--black-card);
+      border: 1px solid var(--gray-700);
+      border-radius: 12px;
+      padding: 2.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .problem-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, #ff5f57, transparent);
+    }
+    .solution-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--amber), transparent);
+    }
+    .card-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 1.25rem;
+    }
+    .problem-card .card-label { color: #ff5f57; }
+    .solution-card .card-label { color: var(--amber); }
+    .card-title {
+      font-family: 'Instrument Serif', serif;
+      font-size: 1.75rem;
+      color: #fff;
+      margin-bottom: 1rem;
+    }
+    .card-text {
+      color: var(--gray-300);
+      line-height: 1.7;
+      font-size: 0.95rem;
+    }
+    .tool-list {
+      margin-top: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      line-height: 2;
+    }
+    .tool-list .strike {
+      color: var(--gray-500);
+      text-decoration: line-through;
+      text-decoration-color: rgba(255, 95, 87, 0.5);
+    }
+    .tool-list .active {
+      color: var(--amber);
+    }
+    .tool-count {
+      display: inline-block;
+      margin-top: 0.75rem;
+      color: #ff5f57;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      padding: 0.25rem 0.6rem;
+      border: 1px solid rgba(255, 95, 87, 0.3);
+      border-radius: 4px;
+    }
+    .tool-single {
+      display: inline-block;
+      margin-top: 0.75rem;
+      color: var(--amber);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      padding: 0.25rem 0.6rem;
+      border: 1px solid rgba(240, 178, 50, 0.3);
+      border-radius: 4px;
+    }
+
+    /* ---- How it works ---- */
+    .flow-section { background: var(--black-light); }
+    .flow-steps {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      margin-top: 4rem;
+      background: var(--gray-700);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .flow-step {
+      background: var(--black-card);
+      padding: 2.5rem 2rem;
+      position: relative;
+    }
+    .flow-step-num {
+      font-family: 'Instrument Serif', serif;
+      font-size: 3rem;
+      color: var(--gray-700);
+      line-height: 1;
+      margin-bottom: 1rem;
+    }
+    .flow-step h3 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--amber);
+      margin-bottom: 0.75rem;
+      letter-spacing: 0.02em;
+    }
+    .flow-step p {
+      color: var(--gray-300);
+      font-size: 0.875rem;
+      line-height: 1.7;
+    }
+    .flow-step code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--green);
+      background: rgba(61, 220, 132, 0.1);
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+    }
+
+    /* ---- Features ---- */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-top: 4rem;
+    }
+    .feature-card {
+      background: var(--black-card);
+      border: 1px solid var(--gray-700);
+      border-radius: 12px;
+      padding: 2rem;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+    .feature-card:hover {
+      border-color: rgba(240, 178, 50, 0.3);
+      transform: translateY(-4px);
+    }
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      background: var(--gray-800);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+      font-size: 1.1rem;
+    }
+    .feature-card h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+    .feature-card p {
+      font-size: 0.875rem;
+      color: var(--gray-500);
+      line-height: 1.6;
+    }
+
+    /* ---- Examples table ---- */
+    .examples-table {
+      margin-top: 4rem;
+      background: var(--black-card);
+      border: 1px solid var(--gray-700);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .examples-table table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    .examples-table thead {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .examples-table th {
+      text-align: left;
+      padding: 1rem 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--gray-500);
+      border-bottom: 1px solid var(--gray-700);
+    }
+    .examples-table td {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+    }
+    .examples-table tr:last-child td { border-bottom: none; }
+    .examples-table .input-col { color: #fff; }
+    .examples-table .arrow-col { color: var(--gray-500); text-align: center; width: 40px; }
+    .examples-table .output-col { color: var(--green); }
+    .multi-step-note {
+      margin-top: 1.5rem;
+      padding: 1.25rem 1.5rem;
+      border: 1px solid rgba(240, 178, 50, 0.2);
+      border-radius: 8px;
+      background: var(--amber-glow);
+      font-size: 0.875rem;
+      color: var(--gray-300);
+      line-height: 1.6;
+    }
+    .multi-step-note strong { color: var(--amber); }
+
+    /* ---- Install section ---- */
+    .install-section { background: var(--black-light); }
+    .install-steps {
+      margin-top: 4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+    .install-step {
+      display: grid;
+      grid-template-columns: 48px 1fr;
+      gap: 1.5rem;
+      align-items: start;
+    }
+    .step-num {
+      width: 48px;
+      height: 48px;
+      border: 1px solid var(--gray-700);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--amber);
+      flex-shrink: 0;
+    }
+    .step-content h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 0.75rem;
+    }
+    .step-content p {
+      font-size: 0.875rem;
+      color: var(--gray-500);
+      margin-bottom: 1rem;
+      line-height: 1.6;
+    }
+    .code-box {
+      background: var(--black-card);
+      border: 1px solid var(--gray-700);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      overflow-x: auto;
+      line-height: 1.7;
+    }
+    .code-box .key { color: var(--amber); }
+    .code-box .str { color: var(--green); }
+    .code-box .comment { color: var(--gray-500); }
+    .code-box .cmd { color: #fff; }
+
+    /* ---- CTA ---- */
+    .cta-section {
+      text-align: center;
+      position: relative;
+    }
+    .cta-section::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 400px;
+      background: radial-gradient(ellipse, var(--amber-glow), transparent 70%);
+      pointer-events: none;
+    }
+    .cta-section .section-title {
+      font-size: clamp(2.25rem, 4.5vw, 3.25rem);
+    }
+    .cta-section .section-sub {
+      max-width: 480px;
+      margin: 0 auto 2.5rem;
+    }
+    .cta-buttons { display: flex; gap: 1rem; justify-content: center; }
+
+    /* ---- Footer ---- */
+    footer {
+      padding: 3rem 0;
+      border-top: 1px solid var(--gray-700);
+    }
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .footer-links { display: flex; gap: 2rem; }
+    .footer-links a {
+      color: var(--gray-500);
+      text-decoration: none;
+      font-size: 0.8rem;
+      transition: color 0.2s;
+    }
+    .footer-links a:hover { color: var(--gray-100); }
+    .footer-copy {
+      font-size: 0.75rem;
+      color: var(--gray-500);
+    }
+    .footer-copy a { color: var(--gray-300); text-decoration: none; }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 768px) {
+      .hero-grid { grid-template-columns: 1fr; gap: 3rem; }
+      .problem-grid { grid-template-columns: 1fr; gap: 2rem; }
+      .flow-steps { grid-template-columns: 1fr; }
+      .features-grid { grid-template-columns: 1fr; }
+      .nav-links { display: none; }
+      .footer-inner { flex-direction: column; gap: 1.5rem; text-align: center; }
+      .install-step { grid-template-columns: 1fr; }
+      .step-num { margin-bottom: -0.5rem; }
+      .cta-buttons { flex-direction: column; align-items: center; }
+      .hero { min-height: auto; padding-top: 8rem; padding-bottom: 4rem; }
+      section { padding: 5rem 0; }
+    }
+    @media (max-width: 1024px) and (min-width: 769px) {
+      .features-grid { grid-template-columns: repeat(2, 1fr); }
+      .flow-steps { grid-template-columns: repeat(2, 1fr); }
     }
   </style>
 </head>
-<body class="bg-gray-50 text-gray-900">
+<body>
+
   <!-- Navigation -->
-  <nav class="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md border-b border-gray-200 z-50">
-    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <div class="w-8 h-8 gradient-bg rounded-lg flex items-center justify-center">
-          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-          </svg>
-        </div>
-        <span class="font-bold text-xl">mcp-router</span>
-      </div>
-      <div class="hidden md:flex items-center gap-8">
-        <a href="#features" class="text-gray-600 hover:text-gray-900 transition">Features</a>
-        <a href="#how-it-works" class="text-gray-600 hover:text-gray-900 transition">How it works</a>
-        <a href="#install" class="text-gray-600 hover:text-gray-900 transition">Install</a>
-        <a href="https://github.com/vijaynw/mcp-router" target="_blank" class="gradient-bg text-white px-4 py-2 rounded-lg font-medium hover:opacity-90 transition">GitHub</a>
+  <nav>
+    <div class="container inner">
+      <a href="#" class="logo">
+        <div class="logo-icon">&gt;_</div>
+        <span>mcp-router</span>
+      </a>
+      <div class="nav-links">
+        <a href="#how-it-works">How it works</a>
+        <a href="#features">Features</a>
+        <a href="#examples">Examples</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/vijaynw/mcp-router" target="_blank" class="nav-cta">GitHub</a>
       </div>
     </div>
   </nav>
 
-  <!-- Hero Section -->
-  <section class="pt-32 pb-20 px-6">
-    <div class="max-w-4xl mx-auto text-center">
-      <div class="inline-block px-4 py-2 bg-gray-100 text-gray-900 rounded-full text-sm font-medium mb-6">
-        v1.0.0 — Now Available
-      </div>
-      <h1 class="text-5xl md:text-6xl font-extrabold mb-6 leading-tight">
-        One tool to <span class="gradient-text">rule them all</span>
-      </h1>
-      <p class="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
-        A smart MCP router that uses Claude to automatically pick and call the right downstream MCP tool from your natural language task.
-      </p>
-      <div class="flex flex-col sm:flex-row gap-4 justify-center">
-        <a href="#install" class="gradient-bg text-white px-8 py-4 rounded-xl font-semibold text-lg hover:opacity-90 transition shadow-lg">
-          Get Started
-        </a>
-        <a href="https://github.com/vijaynw/mcp-router" target="_blank" class="bg-white text-gray-900 px-8 py-4 rounded-xl font-semibold text-lg border border-gray-200 hover:border-gray-300 transition">
-          View on GitHub
-        </a>
-      </div>
-    </div>
-  </section>
-
-  <!-- Problem/Solution -->
-  <section class="py-20 px-6 bg-white">
-    <div class="max-w-6xl mx-auto">
-      <div class="grid md:grid-cols-2 gap-12 items-center">
-        <div>
-          <h2 class="text-3xl font-bold mb-6">The Problem</h2>
-          <p class="text-lg text-gray-600 mb-4">
-            AI editors connect to MCP servers to give agents superpowers — file access, GitHub, databases, Slack, etc.
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-grid">
+        <div class="reveal">
+          <div class="hero-badge">v1.0 &mdash; open source</div>
+          <h1>One tool to<br><em>rule them all</em></h1>
+          <p class="hero-sub">
+            A smart MCP router that uses Claude to automatically pick and call the right downstream tool from your natural language task. 50 tools in, 1 tool out.
           </p>
-          <p class="text-lg text-gray-600">
-            The more MCP servers you add, the more tools the agent sees. With 5 servers × 10 tools each = <span class="font-semibold text-gray-900">50 tools cluttering every prompt</span>. The agent slows down, picks the wrong tool, or gets confused.
-          </p>
+          <div class="hero-buttons">
+            <a href="#install" class="btn-primary">Get Started &rarr;</a>
+            <a href="https://github.com/vijaynw/mcp-router" target="_blank" class="btn-secondary">View Source</a>
+          </div>
         </div>
-        <div class="code-block p-6 text-sm">
-          <div class="text-gray-400 mb-2">// Before: 50+ tools exposed</div>
-          <div class="text-green-400">filesystem__list_directory</div>
-          <div class="text-green-400">filesystem__read_file</div>
-          <div class="text-green-400">filesystem__write_file</div>
-          <div class="text-green-400">github__create_issue</div>
-          <div class="text-green-400">github__list_issues</div>
-          <div class="text-green-400">github__add_comment</div>
-          <div class="text-green-400">slack__send_message</div>
-          <div class="text-green-400">slack__list_channels</div>
-          <div class="text-gray-500 mt-2">... and 40+ more tools</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Solution -->
-  <section class="py-20 px-6 bg-gray-50">
-    <div class="max-w-6xl mx-auto">
-      <div class="grid md:grid-cols-2 gap-12 items-center">
-        <div class="order-2 md:order-1 code-block p-6 text-sm">
-          <div class="text-gray-400 mb-2">// After: Just ONE tool</div>
-          <div class="text-yellow-400 font-semibold">route(task)</div>
-          <div class="text-gray-500 mt-4">// Claude automatically picks the right tool</div>
-          <div class="text-gray-500">// chains multiple calls if needed</div>
-        </div>
-        <div class="order-1 md:order-2">
-          <h2 class="text-3xl font-bold mb-6">The Solution</h2>
-          <p class="text-lg text-gray-600 mb-6">
-            <code class="bg-gray-100 px-2 py-1 rounded text-gray-900 font-mono">mcp-router</code> proxies all your MCP servers behind a <span class="font-semibold">single <code class="bg-gray-100 px-2 py-1 rounded text-gray-900 font-mono">route</code> tool</span>. You describe what you want in plain English — the router figures out which tool to call.
-          </p>
-          <div class="space-y-3">
-            <div class="flex items-start gap-3">
-              <div class="w-6 h-6 gradient-bg rounded-full flex items-center justify-center flex-shrink-0 mt-1">
-                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                </svg>
-              </div>
-              <div>
-                <strong class="text-gray-900">Hides complexity</strong>
-                <p class="text-gray-600">Your editor sees exactly 1 tool regardless of how many MCPs you connect</p>
-              </div>
+        <div class="reveal" style="transition-delay: 0.15s;">
+          <div class="terminal">
+            <div class="terminal-bar">
+              <div class="terminal-dot"></div>
+              <div class="terminal-dot"></div>
+              <div class="terminal-dot"></div>
+              <div class="terminal-title">mcp-router</div>
             </div>
-            <div class="flex items-start gap-3">
-              <div class="w-6 h-6 gradient-bg rounded-full flex items-center justify-center flex-shrink-0 mt-1">
-                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                </svg>
-              </div>
-              <div>
-                <strong class="text-gray-900">Intelligent routing</strong>
-                <p class="text-gray-600">Claude reads your request and picks the best downstream tool automatically</p>
-              </div>
-            </div>
-            <div class="flex items-start gap-3">
-              <div class="w-6 h-6 gradient-bg rounded-full flex items-center justify-center flex-shrink-0 mt-1">
-                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                </svg>
-              </div>
-              <div>
-                <strong class="text-gray-900">Multi-step tasks</strong>
-                <p class="text-gray-600">For complex requests, Claude chains multiple tool calls in sequence</p>
-              </div>
+            <div class="terminal-body">
+              <div><span class="prompt">$</span> <span class="cmd">route</span> <span class="dim">"create a GitHub issue titled 'Bug: login fails'"</span></div>
+              <br>
+              <div><span class="comment">// analyzing request...</span></div>
+              <div><span class="comment">// matched: github__create_issue</span></div>
+              <div><span class="comment">// executing with params...</span></div>
+              <br>
+              <div><span class="output">&#10003; Issue #42 created successfully</span></div>
+              <div><span class="output">&nbsp; github.com/your-org/repo/issues/42</span></div>
+              <br>
+              <div><span class="prompt">$</span> <span class="cursor-blink"></span></div>
             </div>
           </div>
         </div>
@@ -168,286 +707,293 @@
     </div>
   </section>
 
-  <!-- Flow Diagram -->
-  <section id="how-it-works" class="py-20 px-6 bg-white">
-    <div class="max-w-6xl mx-auto">
-      <div class="text-center mb-12">
-        <h2 class="text-3xl font-bold mb-4">How it works</h2>
-        <p class="text-lg text-gray-600">Simple flow, powerful results</p>
+  <div class="container"><div class="glow-line"></div></div>
+
+  <!-- Problem / Solution -->
+  <section>
+    <div class="container">
+      <div class="reveal">
+        <div class="section-label">The problem &amp; the fix</div>
+        <h2 class="section-title">Too many tools, not enough signal</h2>
+        <p class="section-sub">AI editors choke when they see 50+ MCP tools. mcp-router funnels everything through a single intelligent endpoint.</p>
       </div>
-      <div class="code-block p-8 text-center">
-        <div class="flex flex-col md:flex-row items-center justify-center gap-4 text-sm">
-          <div class="bg-gray-800 px-6 py-3 rounded-lg">
-            <div class="text-gray-400 mb-1">Your prompt</div>
-            <div class="text-white font-mono">route("create GitHub issue")</div>
+      <div class="problem-grid">
+        <div class="problem-card reveal" style="transition-delay: 0.1s;">
+          <div class="card-label">Before</div>
+          <div class="card-title">50 tools exposed</div>
+          <p class="card-text">Every MCP server dumps its tools directly into the agent's prompt. The agent slows down, picks the wrong tool, or gets confused.</p>
+          <div class="tool-list">
+            <div class="strike">filesystem__list_directory</div>
+            <div class="strike">filesystem__read_file</div>
+            <div class="strike">filesystem__write_file</div>
+            <div class="strike">github__create_issue</div>
+            <div class="strike">github__list_issues</div>
+            <div class="strike">slack__send_message</div>
+            <div class="strike">slack__list_channels</div>
+            <div class="dim" style="color: var(--gray-500)">... +43 more</div>
           </div>
-          <div class="flow-arrow text-2xl text-gray-500">↓</div>
-          <div class="bg-gray-900 px-6 py-3 rounded-lg">
-            <div class="text-gray-400 mb-1">Claude picks tool</div>
-            <div class="text-white font-mono">analyzes request</div>
+          <div class="tool-count">50 tools in context</div>
+        </div>
+        <div class="solution-card reveal" style="transition-delay: 0.2s;">
+          <div class="card-label">After</div>
+          <div class="card-title">1 tool exposed</div>
+          <p class="card-text">mcp-router proxies everything behind a single <code style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:var(--amber);background:var(--amber-glow);padding:0.15rem 0.4rem;border-radius:3px;">route</code> tool. You describe what you want &mdash; Claude figures out the rest.</p>
+          <div class="tool-list">
+            <div class="active">route(task)</div>
+            <br>
+            <div class="dim" style="font-size:0.7rem;">// Claude reads your request</div>
+            <div class="dim" style="font-size:0.7rem;">// picks the right downstream tool</div>
+            <div class="dim" style="font-size:0.7rem;">// chains calls if needed</div>
+            <div class="dim" style="font-size:0.7rem;">// returns the result</div>
           </div>
-          <div class="flow-arrow text-2xl text-gray-500">↓</div>
-          <div class="bg-gray-800 px-6 py-3 rounded-lg">
-            <div class="text-gray-400 mb-1">Router calls</div>
-            <div class="text-green-400 font-mono">github__create_issue(...)</div>
-          </div>
-          <div class="flow-arrow text-2xl text-gray-500">↓</div>
-          <div class="bg-gray-800 px-6 py-3 rounded-lg">
-            <div class="text-gray-400 mb-1">Result</div>
-            <div class="text-white font-mono">back to you ✓</div>
-          </div>
+          <div class="tool-single">1 tool in context</div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Architecture Diagram -->
-  <section class="py-20 px-6 bg-gray-900">
-    <div class="max-w-6xl mx-auto">
-      <div class="text-center mb-12">
-        <h2 class="text-3xl font-bold text-white mb-4">Architecture</h2>
-        <p class="text-lg text-gray-400">See how mcp-router connects your AI editor to downstream MCP servers</p>
+  <!-- How it works -->
+  <section id="how-it-works" class="flow-section">
+    <div class="container">
+      <div class="reveal">
+        <div class="section-label">How it works</div>
+        <h2 class="section-title">Four steps, zero friction</h2>
+        <p class="section-sub">From natural language to executed tool call in milliseconds.</p>
       </div>
-      <div class="rounded-xl overflow-hidden border border-gray-700 shadow-2xl">
-        <img src="architecture.png" alt="mcp-router architecture diagram showing AI editors connecting through a single route tool to Claude, which dispatches calls to downstream MCP servers" class="w-full h-auto">
+      <div class="flow-steps reveal" style="transition-delay: 0.15s;">
+        <div class="flow-step">
+          <div class="flow-step-num">01</div>
+          <h3>You describe</h3>
+          <p>Write a plain-English task like <code>"list files in /tmp"</code></p>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num">02</div>
+          <h3>Claude analyzes</h3>
+          <p>The router sends your request + full tool catalog to Claude for intelligent matching.</p>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num">03</div>
+          <h3>Tool executes</h3>
+          <p>The matched tool (<code>filesystem__list_directory</code>) is called with the right parameters.</p>
+        </div>
+        <div class="flow-step">
+          <div class="flow-step-num">04</div>
+          <h3>Result returns</h3>
+          <p>You get a clean result back. For multi-step tasks, Claude chains calls automatically.</p>
+        </div>
       </div>
     </div>
   </section>
 
   <!-- Features -->
-  <section id="features" class="py-20 px-6 bg-gray-50">
-    <div class="max-w-6xl mx-auto">
-      <div class="text-center mb-12">
-        <h2 class="text-3xl font-bold mb-4">Features</h2>
-        <p class="text-lg text-gray-600">Everything you need to streamline your MCP workflow</p>
+  <section id="features">
+    <div class="container">
+      <div class="reveal">
+        <div class="section-label">Features</div>
+        <h2 class="section-title">Built for real workflows</h2>
+        <p class="section-sub">Everything you need to consolidate your MCP setup into a single, intelligent tool.</p>
       </div>
-      <div class="grid md:grid-cols-3 gap-6">
-        <div class="bg-white p-6 rounded-xl card-hover">
-          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
-            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-            </svg>
-          </div>
-          <h3 class="text-xl font-semibold mb-2">Natural Language</h3>
-          <p class="text-gray-600">Describe tasks in plain English. No need to remember specific tool names or parameters.</p>
+      <div class="features-grid">
+        <div class="feature-card reveal" style="transition-delay:0.05s">
+          <div class="feature-icon">&#9889;</div>
+          <h3>Natural language routing</h3>
+          <p>Describe tasks in plain English. No need to remember tool names or parameter schemas.</p>
         </div>
-        <div class="bg-white p-6 rounded-xl card-hover">
-          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
-            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-            </svg>
-          </div>
-          <h3 class="text-xl font-semibold mb-2">Smart Routing</h3>
-          <p class="text-gray-600">Claude intelligently selects the right tool from dozens of available options.</p>
+        <div class="feature-card reveal" style="transition-delay:0.1s">
+          <div class="feature-icon">&#128270;</div>
+          <h3>Smart tool matching</h3>
+          <p>Claude reads the full tool catalog and selects the best match from dozens of options.</p>
         </div>
-        <div class="bg-white p-6 rounded-xl card-hover">
-          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
-            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-            </svg>
-          </div>
-          <h3 class="text-xl font-semibold mb-2">Multi-step Chaining</h3>
-          <p class="text-gray-600">Complex tasks? Claude chains multiple tool calls automatically and returns a single result.</p>
+        <div class="feature-card reveal" style="transition-delay:0.15s">
+          <div class="feature-icon">&#128279;</div>
+          <h3>Multi-step chaining</h3>
+          <p>Complex tasks? Claude chains multiple tool calls in sequence and returns a unified result.</p>
         </div>
-        <div class="bg-white p-6 rounded-xl card-hover">
-          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
-            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
-            </svg>
-          </div>
-          <h3 class="text-xl font-semibold mb-2">HTTP & stdio</h3>
-          <p class="text-gray-600">Run as stdio for editors or HTTP server for remote/multi-client setups.</p>
+        <div class="feature-card reveal" style="transition-delay:0.2s">
+          <div class="feature-icon">&#128268;</div>
+          <h3>HTTP &amp; stdio modes</h3>
+          <p>Run as stdio for editors or HTTP server for remote and multi-client setups.</p>
         </div>
-        <div class="bg-white p-6 rounded-xl card-hover">
-          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
-            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
-            </svg>
-          </div>
-          <h3 class="text-xl font-semibold mb-2">Configurable</h3>
-          <p class="text-gray-600">Customize Claude model, token limits, and max iterations per task.</p>
+        <div class="feature-card reveal" style="transition-delay:0.25s">
+          <div class="feature-icon">&#9881;</div>
+          <h3>Fully configurable</h3>
+          <p>Customize Claude model, token limits, max iterations, and server modes per task.</p>
         </div>
-        <div class="bg-white p-6 rounded-xl card-hover">
-          <div class="w-12 h-12 gradient-bg rounded-lg flex items-center justify-center mb-4">
-            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-            </svg>
-          </div>
-          <h3 class="text-xl font-semibold mb-2">Cost Effective</h3>
-          <p class="text-gray-600">~$0.001–0.003 per simple task. Negligible for occasional editor use.</p>
+        <div class="feature-card reveal" style="transition-delay:0.3s">
+          <div class="feature-icon">&#128176;</div>
+          <h3>Cost effective</h3>
+          <p>~$0.001&ndash;0.003 per simple task. Negligible for regular editor use.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Usage Examples -->
-  <section class="py-20 px-6 bg-white">
-    <div class="max-w-6xl mx-auto">
-      <div class="text-center mb-12">
-        <h2 class="text-3xl font-bold mb-4">Usage Examples</h2>
-        <p class="text-lg text-gray-600">Just describe what you want — mcp-router handles the rest</p>
+  <div class="container"><div class="glow-line"></div></div>
+
+  <!-- Usage examples -->
+  <section id="examples">
+    <div class="container">
+      <div class="reveal">
+        <div class="section-label">Examples</div>
+        <h2 class="section-title">Say what you want. Get what you need.</h2>
+        <p class="section-sub">Just describe the task &mdash; mcp-router handles tool selection, parameters, and execution.</p>
       </div>
-      <div class="code-block p-6">
-        <table class="w-full text-left text-sm">
+      <div class="examples-table reveal" style="transition-delay: 0.1s;">
+        <table>
           <thead>
-            <tr class="border-b border-gray-700">
-              <th class="pb-3 text-gray-400 font-medium">You say</th>
-              <th class="pb-3 text-gray-400 font-medium">Router calls</th>
+            <tr>
+              <th>You say</th>
+              <th></th>
+              <th>Router calls</th>
             </tr>
           </thead>
-          <tbody class="text-gray-300">
-            <tr class="border-b border-gray-800">
-              <td class="py-3 font-mono text-white">"list files in /tmp"</td>
-              <td class="py-3 font-mono text-green-400">filesystem__list_directory</td>
-            </tr>
-            <tr class="border-b border-gray-800">
-              <td class="py-3 font-mono text-white">"create a GitHub issue titled 'Bug: login fails'"</td>
-              <td class="py-3 font-mono text-green-400">github__create_issue</td>
-            </tr>
-            <tr class="border-b border-gray-800">
-              <td class="py-3 font-mono text-white">"search for TODO in all JS files under src/"</td>
-              <td class="py-3 font-mono text-green-400">filesystem__search_files</td>
+          <tbody>
+            <tr>
+              <td class="input-col">"list files in /tmp"</td>
+              <td class="arrow-col">&rarr;</td>
+              <td class="output-col">filesystem__list_directory</td>
             </tr>
             <tr>
-              <td class="py-3 font-mono text-white">"what's in the README?"</td>
-              <td class="py-3 font-mono text-green-400">filesystem__read_file</td>
+              <td class="input-col">"create a GitHub issue titled 'Bug: login fails'"</td>
+              <td class="arrow-col">&rarr;</td>
+              <td class="output-col">github__create_issue</td>
+            </tr>
+            <tr>
+              <td class="input-col">"search for TODO in all JS files under src/"</td>
+              <td class="arrow-col">&rarr;</td>
+              <td class="output-col">filesystem__search_files</td>
+            </tr>
+            <tr>
+              <td class="input-col">"what's in the README?"</td>
+              <td class="arrow-col">&rarr;</td>
+              <td class="output-col">filesystem__read_file</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div class="mt-6 p-4 bg-gray-100 border border-gray-200 rounded-lg">
-        <p class="text-gray-800 text-sm">
-          <strong>Multi-step example:</strong> "Read the package.json, then create a GitHub issue summarising the dependencies" 
-          → reads file → creates issue → returns result
-        </p>
+      <div class="multi-step-note reveal" style="transition-delay: 0.2s;">
+        <strong>Multi-step:</strong> "Read the package.json, then create a GitHub issue summarising the dependencies" &rarr; reads file &rarr; creates issue &rarr; returns result
       </div>
     </div>
   </section>
 
   <!-- Installation -->
-  <section id="install" class="py-20 px-6 bg-gray-50">
-    <div class="max-w-4xl mx-auto">
-      <div class="text-center mb-12">
-        <h2 class="text-3xl font-bold mb-4">Installation</h2>
-        <p class="text-lg text-gray-600">Get started in 3 simple steps</p>
+  <section id="install" class="install-section">
+    <div class="container">
+      <div class="reveal">
+        <div class="section-label">Get started</div>
+        <h2 class="section-title">Up and running in 3 steps</h2>
+        <p class="section-sub">Works with Windsurf, Cursor, Claude Desktop, and any MCP-compatible editor.</p>
       </div>
-      <div class="space-y-6">
-        <div class="bg-white p-6 rounded-xl">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-8 h-8 gradient-bg rounded-full flex items-center justify-center text-white font-bold">1</div>
-            <h3 class="text-xl font-semibold">Install globally</h3>
+      <div class="install-steps">
+        <div class="install-step reveal" style="transition-delay:0.05s">
+          <div class="step-num">01</div>
+          <div class="step-content">
+            <h3>Install globally</h3>
+            <p>Or run without installing using <code style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--amber);">npx @vijaynkw/mcp-router</code></p>
+            <div class="code-box">
+              <span class="cmd">npm install -g @vijaynkw/mcp-router</span>
+            </div>
           </div>
-          <div class="code-block p-4 text-sm">
-            <code class="text-green-400">npm install -g mcp-router</code>
-          </div>
-          <p class="text-gray-600 mt-3 text-sm">Or run without installing: <code class="bg-gray-100 px-2 py-1 rounded">npx mcp-router</code></p>
         </div>
-        <div class="bg-white p-6 rounded-xl">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-8 h-8 gradient-bg rounded-full flex items-center justify-center text-white font-bold">2</div>
-            <h3 class="text-xl font-semibold">Create config file</h3>
-          </div>
-          <p class="text-gray-600 mb-3 text-sm">Create <code class="bg-gray-100 px-2 py-1 rounded">mcp-router.config.json</code> in your project or home directory:</p>
-          <div class="code-block p-4 text-sm overflow-x-auto">
-            <pre class="text-gray-300">{
-  "mcpServers": {
-    "filesystem": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/your/path"]
+        <div class="install-step reveal" style="transition-delay:0.1s">
+          <div class="step-num">02</div>
+          <div class="step-content">
+            <h3>Create config file</h3>
+            <p>Create <code style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--amber);">mcp-router.config.json</code> in your project or home directory:</p>
+            <div class="code-box"><pre style="margin:0;white-space:pre;overflow-x:auto;">{
+  <span class="key">"mcpServers"</span>: {
+    <span class="key">"filesystem"</span>: {
+      <span class="key">"type"</span>: <span class="str">"stdio"</span>,
+      <span class="key">"command"</span>: <span class="str">"npx"</span>,
+      <span class="key">"args"</span>: [<span class="str">"-y"</span>, <span class="str">"@modelcontextprotocol/server-filesystem"</span>, <span class="str">"/your/path"</span>]
     },
-    "github": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_TOKEN": "ghp_your_token_here"
-      }
+    <span class="key">"github"</span>: {
+      <span class="key">"type"</span>: <span class="str">"stdio"</span>,
+      <span class="key">"command"</span>: <span class="str">"npx"</span>,
+      <span class="key">"args"</span>: [<span class="str">"-y"</span>, <span class="str">"@modelcontextprotocol/server-github"</span>],
+      <span class="key">"env"</span>: { <span class="key">"GITHUB_TOKEN"</span>: <span class="str">"ghp_your_token"</span> }
     }
   }
-}</pre>
+}</pre></div>
           </div>
         </div>
-        <div class="bg-white p-6 rounded-xl">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-8 h-8 gradient-bg rounded-full flex items-center justify-center text-white font-bold">3</div>
-            <h3 class="text-xl font-semibold">Set API key & add to editor</h3>
-          </div>
-          <p class="text-gray-600 mb-3 text-sm">Set your Anthropic API key:</p>
-          <div class="code-block p-4 text-sm mb-4">
-            <code class="text-green-400">export ANTHROPIC_API_KEY=sk-ant-...</code>
-          </div>
-          <p class="text-gray-600 mb-3 text-sm">Add to your editor config (Windsurf/Cursor/Claude Desktop):</p>
-          <div class="code-block p-4 text-sm overflow-x-auto">
-            <pre class="text-gray-300">{
-  "mcpServers": {
-    "router": {
-      "command": "npx",
-      "args": ["mcp-router"],
-      "env": {
-        "ANTHROPIC_API_KEY": "sk-ant-...",
-        "MCP_ROUTER_CONFIG": "/absolute/path/to/mcp-router.config.json"
+        <div class="install-step reveal" style="transition-delay:0.15s">
+          <div class="step-num">03</div>
+          <div class="step-content">
+            <h3>Set API key &amp; add to your editor</h3>
+            <p>Set your Anthropic API key, then add mcp-router to your editor config:</p>
+            <div class="code-box" style="margin-bottom:1rem;">
+              <span class="cmd">export</span> <span class="key">ANTHROPIC_API_KEY</span>=<span class="str">sk-ant-...</span>
+            </div>
+            <div class="code-box"><pre style="margin:0;white-space:pre;overflow-x:auto;"><span class="comment">// Editor MCP config (Windsurf, Cursor, Claude Desktop)</span>
+{
+  <span class="key">"mcpServers"</span>: {
+    <span class="key">"router"</span>: {
+      <span class="key">"command"</span>: <span class="str">"npx"</span>,
+      <span class="key">"args"</span>: [<span class="str">"@vijaynkw/mcp-router"</span>],
+      <span class="key">"env"</span>: {
+        <span class="key">"ANTHROPIC_API_KEY"</span>: <span class="str">"sk-ant-..."</span>,
+        <span class="key">"MCP_ROUTER_CONFIG"</span>: <span class="str">"/path/to/mcp-router.config.json"</span>
       }
     }
   }
-}</pre>
+}</pre></div>
+            <p style="margin-top:1rem;">Restart your editor &mdash; you'll see a single <code style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--amber);">route</code> tool instead of all individual tools.</p>
           </div>
-          <p class="text-gray-600 text-sm">Restart your editor — you'll see a single <code class="bg-gray-100 px-2 py-1 rounded text-gray-900">route</code> tool instead of all individual tools.</p>
         </div>
       </div>
     </div>
   </section>
 
   <!-- CTA -->
-  <section class="py-20 px-6 bg-gray-900">
-    <div class="max-w-4xl mx-auto text-center">
-      <h2 class="text-3xl md:text-4xl font-bold text-white mb-6">Ready to simplify your MCP workflow?</h2>
-      <p class="text-xl text-gray-300 mb-8">Get started with mcp-router today and let Claude handle the tool selection for you.</p>
-      <div class="flex flex-col sm:flex-row gap-4 justify-center">
-        <a href="#install" class="bg-white text-gray-900 px-8 py-4 rounded-xl font-semibold text-lg hover:bg-gray-100 transition shadow-lg">
-          Get Started
-        </a>
-        <a href="https://github.com/vijaynw/mcp-router" target="_blank" class="bg-transparent text-white px-8 py-4 rounded-xl font-semibold text-lg border-2 border-white hover:bg-white/10 transition">
-          View on GitHub
-        </a>
+  <section class="cta-section">
+    <div class="container" style="position:relative;">
+      <div class="reveal">
+        <div class="section-label">Ready?</div>
+        <h2 class="section-title">Simplify your MCP workflow</h2>
+        <p class="section-sub">Let Claude handle the tool selection. You focus on the work.</p>
+        <div class="cta-buttons">
+          <a href="#install" class="btn-primary">Get Started &rarr;</a>
+          <a href="https://github.com/vijaynw/mcp-router" target="_blank" class="btn-secondary">View on GitHub</a>
+        </div>
       </div>
     </div>
   </section>
 
   <!-- Footer -->
-  <footer class="bg-gray-900 text-gray-400 py-12 px-6">
-    <div class="max-w-6xl mx-auto">
-      <div class="flex flex-col md:flex-row justify-between items-center gap-6">
-        <div class="flex items-center gap-2">
-          <div class="w-8 h-8 gradient-bg rounded-lg flex items-center justify-center">
-            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-            </svg>
-          </div>
-          <span class="font-bold text-white">mcp-router</span>
-        </div>
-        <div class="flex items-center gap-6">
-          <a href="https://github.com/vijaynw/mcp-router" target="_blank" class="hover:text-white transition">GitHub</a>
-          <a href="https://www.npmjs.com/package/mcp-router" target="_blank" class="hover:text-white transition">npm</a>
-        </div>
-        <div class="text-sm">
-          MIT © <a href="https://github.com/vijaynw" target="_blank" class="hover:text-white transition">Vijaynw</a>
-        </div>
+  <footer>
+    <div class="container footer-inner">
+      <a href="#" class="logo">
+        <div class="logo-icon">&gt;_</div>
+        <span>mcp-router</span>
+      </a>
+      <div class="footer-links">
+        <a href="https://github.com/vijaynw/mcp-router" target="_blank">GitHub</a>
+        <a href="https://www.npmjs.com/package/mcp-router" target="_blank">npm</a>
+      </div>
+      <div class="footer-copy">
+        MIT &copy; <a href="https://github.com/vijaynw" target="_blank">Vijaynw</a>
       </div>
     </div>
   </footer>
 
   <script>
-    // Smooth scroll for anchor links
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-      anchor.addEventListener('click', function (e) {
+    // Smooth scroll
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', e => {
         e.preventDefault();
-        const target = document.querySelector(this.getAttribute('href'));
-        if (target) {
-          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
+        const t = document.querySelector(a.getAttribute('href'));
+        if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
+
+    // Scroll reveal
+    const observer = new IntersectionObserver(
+      entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); }),
+      { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
+    );
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
   </script>
 </body>
 </html>

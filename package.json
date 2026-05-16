@@ -1,11 +1,12 @@
 {
-  "name": "mcp-router",
+  "name": "@vijaynkw/mcp-router",
   "version": "1.0.0",
-  "description": "Smart MCP router — exposes a single 'route' tool that uses Claude to pick and call the right downstream MCP tool automatically",
+  "description": "Smart MCP router — four modes (router, delegated, passthrough, smart) with support for Anthropic Claude, Ollama, Groq, and any OpenAI-compatible provider",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "mcp-router": "dist/index.js"
+    "mcp-router": "dist/index.js",
+    "@vijaynkw/mcp-router": "dist/index.js"
   },
   "files": [
     "dist/**/*"

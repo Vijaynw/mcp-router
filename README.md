@@ -35,13 +35,13 @@ AI editors connect to MCP servers to give agents superpowers — file access, Gi
 ## Install
 
 ```bash
-npm install -g mcp-router
+npm install -g @vijaynkw/mcp-router
 ```
 
 Or run without installing:
 
 ```bash
-npx mcp-router
+npx @vijaynkw/mcp-router
 ```
 
 ---
@@ -85,7 +85,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
   "mcpServers": {
     "router": {
       "command": "npx",
-      "args": ["mcp-router"],
+      "args": ["@vijaynkw/mcp-router"],
       "env": {
         "ANTHROPIC_API_KEY": "sk-ant-...",
         "MCP_ROUTER_CONFIG": "/absolute/path/to/mcp-router.config.json"
@@ -334,7 +334,7 @@ Same pattern — set `baseUrl` to your endpoint and `model` to the model name.
 Run as an HTTP server instead of stdio — useful for remote or multi-client setups:
 
 ```bash
-TRANSPORT=http PORT=3000 ANTHROPIC_API_KEY=sk-ant-... npx mcp-router
+TRANSPORT=http PORT=3000 ANTHROPIC_API_KEY=sk-ant-... npx @vijaynkw/mcp-router
 ```
 
 - **MCP endpoint:** `POST http://127.0.0.1:3000/mcp`
@@ -369,7 +369,7 @@ Using Ollama or Groq's free tier makes all AI modes effectively free.
 
 - **Always set `MCP_ROUTER_TOKEN`** when running HTTP mode:
   ```bash
-  MCP_ROUTER_TOKEN=your-secret TRANSPORT=http npx mcp-router
+  MCP_ROUTER_TOKEN=your-secret TRANSPORT=http npx @vijaynkw/mcp-router
   ```
   All requests must include `Authorization: Bearer your-secret`.
 
