@@ -15,9 +15,18 @@ export interface SseMcpConfig {
     headers?: Record<string, string>;
 }
 export type McpServerConfig = StdioMcpConfig | SseMcpConfig;
+export type RouterMode = "router" | "delegated" | "passthrough" | "smart";
 export interface RouterConfig {
     /** Named downstream MCP servers */
     mcpServers: Record<string, McpServerConfig>;
+    /**
+     * Operating mode. Defaults to "router".
+     * - router:      1 tool (route). Claude picks + executes. Needs API key.
+     * - delegated:   2 tools (select + execute). Claude classifies only. Needs API key.
+     * - passthrough: All downstream tools exposed directly. No API key needed.
+     * - smart:       All tools + recommend tool. Needs API key.
+     */
+    mode?: RouterMode;
     claude?: {
         /** Defaults to claude-sonnet-4-6 */
         model?: string;

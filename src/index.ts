@@ -6,7 +6,12 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express from "express";
 import type { RequestHandler } from "express";
 import { McpConnector } from "./connector.js";
-import { createRouterServer } from "./router.js";
+import {
+  createRouterServer,
+  createDelegatedServer,
+  createPassthroughServer,
+  createSmartServer,
+} from "./router.js";
 import type { RouterConfig } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -32,6 +37,22 @@ function loadConfig(): RouterConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Server factory — dispatches to the right implementation based on config.mode
+// ---------------------------------------------------------------------------
+
+function buildServer(connector: McpConnector, config: RouterConfig) {
+  const mode = config.mode ?? "router";
+  console.error(`[mcp-router] Mode: ${mode}`);
+  switch (mode) {
+    case "delegated":    return createDelegatedServer(connector, config);
+    case "passthrough":  return createPassthroughServer(connector);
+    case "smart":        return createSmartServer(connector, config);
+    case "router":
+    default:             return createRouterServer(connector, config);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Transports
 // ---------------------------------------------------------------------------
 
@@ -39,7 +60,7 @@ async function runStdio(
   connector: McpConnector,
   config: RouterConfig
 ): Promise<void> {
-  const server = createRouterServer(connector, config);
+  const server = buildServer(connector, config);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("[mcp-router] Running via stdio — ready.");
@@ -84,8 +105,7 @@ async function runHttp(
     next();
   };
 
-  // Create the McpServer once; create a new transport per request (stateless).
-  const server = createRouterServer(connector, config);
+  const server = buildServer(connector, config);
 
   app.post("/mcp", requireAuth, async (req, res) => {
     const transport = new StreamableHTTPServerTransport({
@@ -121,14 +141,16 @@ async function runHttp(
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  const config = loadConfig();
+  const mode = config.mode ?? "router";
+
+  if (mode !== "passthrough" && !process.env.ANTHROPIC_API_KEY) {
     console.error(
-      "[mcp-router] ERROR: ANTHROPIC_API_KEY environment variable is required."
+      `[mcp-router] ERROR: ANTHROPIC_API_KEY is required for mode "${mode}". ` +
+        `Set it, or use mode "passthrough" to skip Claude entirely.`
     );
     process.exit(1);
   }
-
-  const config = loadConfig();
   const connector = new McpConnector();
 
   await connector.connectAll(config);

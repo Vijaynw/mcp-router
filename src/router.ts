@@ -276,7 +276,7 @@ async function recommendTool(
     .map((t) => `- ${sanitize(t.mcpName)}__${sanitize(t.name)}: ${t.description}`)
     .join("\n");
 
-  const response = await anthropic.messages.create({
+  const response = await getAnthropicClient().messages.create({
     model,
     max_tokens: maxTokens,
     system: RECOMMEND_SYSTEM_PROMPT,
@@ -317,7 +317,7 @@ async function selectTool(
     .map(([id, t]) => `- ${id}: ${t.description}`)
     .join("\n");
 
-  const response = await anthropic.messages.create({
+  const response = await getAnthropicClient().messages.create({
     model,
     max_tokens: maxTokens,
     system: SELECT_SYSTEM_PROMPT,
